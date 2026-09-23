@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: self-checkout
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:self_checkout}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD}
+    hikari:
+      # Deliberately well below the station count. A pool smaller than the
+      # number of concurrent stations is correct here: queuing briefly at the
+      # pool is far cheaper than thrashing Postgres with 100 live backends.
+      maximum-pool-size: ${DB_POOL_SIZE:32}
+      minimum-idle: 8
+      connection-timeout: 10000
+      pool-name: self-checkout-pool
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      write-bigdecimal-as-plain: true
+    default-property-inclusion: always
+
+server:
+  port: ${SERVER_PORT:8080}
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+
+app:
+  # Wipe and reseed on boot. Off by default; the reset script and
+  # POST /admin/reset are the usual routes.
+  reset-on-startup: false
+  catalog-size: 2000
+  stock-per-item: 10000
+  low-stock-threshold: 50
+  popularity:
+    # Hopping window, per the OpenAPI contract: count the most recent
+    # window-size scans, recompute every slide-interval scans.
+    window-size: 1000
+    slide-interval: 500
+
+logging:
+  level:
+    com.school.selfcheckout: INFO
