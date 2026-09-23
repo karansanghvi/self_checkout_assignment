@@ -1,7 +1,7 @@
 package com.school.selfcheckout.api;
 
-import com.school.selfcheckout.api.dto.Dtos.LowStockResponse;
-import com.school.selfcheckout.service.InventoryService;
+import com.school.selfcheckout.analytics.LowStockService;
+import com.school.selfcheckout.contract.Dtos.LowStockResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -9,14 +9,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class InventoryController {
 
-    private final InventoryService inventoryService;
+    private final LowStockService lowStockService;
 
-    public InventoryController(InventoryService inventoryService) {
-        this.inventoryService = inventoryService;
+    public InventoryController(LowStockService lowStockService) {
+        this.lowStockService = lowStockService;
     }
 
     @GetMapping("/inventory/low-stock")
     public LowStockResponse lowStock(@RequestParam(required = false) Integer threshold) {
-        return inventoryService.lowStock(threshold);
+        return lowStockService.lowStock(threshold);
     }
 }

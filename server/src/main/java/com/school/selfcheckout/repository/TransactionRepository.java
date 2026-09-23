@@ -1,5 +1,6 @@
 package com.school.selfcheckout.repository;
 
+import com.school.selfcheckout.domain.ScanTotals;
 import com.school.selfcheckout.domain.TransactionRow;
 import com.school.selfcheckout.domain.TransactionLine;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -104,9 +105,6 @@ public class TransactionRepository {
                 (rs, rowNum) -> new ScanTotals(rs.getInt("item_count"), rs.getBigDecimal("running_total")),
                 transactionId, sku, unitPrice, transactionId, unitPrice, transactionId);
         return result.isEmpty() ? null : result.get(0);
-    }
-
-    public record ScanTotals(int itemCount, BigDecimal runningTotal) {
     }
 
     /**

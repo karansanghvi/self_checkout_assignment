@@ -1,7 +1,7 @@
-package com.school.selfcheckout.service;
+package com.school.selfcheckout.catalog;
 
-import com.school.selfcheckout.api.dto.Dtos.CatalogItem;
-import com.school.selfcheckout.api.dto.Dtos.CatalogResponse;
+import com.school.selfcheckout.contract.Dtos.CatalogItem;
+import com.school.selfcheckout.contract.Dtos.CatalogResponse;
 import com.school.selfcheckout.domain.Item;
 import com.school.selfcheckout.repository.ItemRepository;
 import org.slf4j.Logger;

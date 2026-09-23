@@ -1,5 +1,7 @@
-package com.school.selfcheckout.service;
+package com.school.selfcheckout.admin;
 
+import com.school.selfcheckout.analytics.PopularityService;
+import com.school.selfcheckout.catalog.CatalogService;
 import com.school.selfcheckout.config.AppProperties;
 import com.school.selfcheckout.repository.ResetRepository;
 import org.slf4j.Logger;
@@ -31,10 +33,23 @@ public class ResetService {
     }
 
     public Map<String, Object> reset() {
-        return reset(properties.getCatalogSize(), properties.getStockPerItem());
+        return reset(null, null);
     }
 
-    public Map<String, Object> reset(int catalogSize, int stockPerItem) {
+    /**
+     * Resets to the given sizes, falling back to configuration for either
+     * argument that is null.
+     *
+     * Resolving the defaults here rather than at the controller is deliberate:
+     * AdminController used to hardcode 2000/10000, which silently duplicated
+     * -- and could contradict -- {@link AppProperties}.
+     */
+    public Map<String, Object> reset(Integer catalogSizeOverride, Integer stockPerItemOverride) {
+        int catalogSize = catalogSizeOverride != null
+                ? catalogSizeOverride : properties.getCatalogSize();
+        int stockPerItem = stockPerItemOverride != null
+                ? stockPerItemOverride : properties.getStockPerItem();
+
         long start = System.nanoTime();
 
         resetRepository.reseed(catalogSize, stockPerItem);

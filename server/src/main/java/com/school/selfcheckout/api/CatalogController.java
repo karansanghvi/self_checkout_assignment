@@ -1,7 +1,7 @@
 package com.school.selfcheckout.api;
 
-import com.school.selfcheckout.api.dto.Dtos.CatalogResponse;
-import com.school.selfcheckout.service.CatalogService;
+import com.school.selfcheckout.catalog.CatalogService;
+import com.school.selfcheckout.contract.Dtos.CatalogResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 

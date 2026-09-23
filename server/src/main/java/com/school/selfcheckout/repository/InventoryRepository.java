@@ -1,5 +1,6 @@
 package com.school.selfcheckout.repository;
 
+import com.school.selfcheckout.domain.DecrementResult;
 import com.school.selfcheckout.domain.LowStockRow;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -25,13 +26,6 @@ public class InventoryRepository {
 
     public InventoryRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
-    }
-
-    /** Outcome of decrementing one SKU: how many units we actually took, and the resulting stock. */
-    public record DecrementResult(int fulfilled, int newStock) {
-        public boolean isShort(int requested) {
-            return fulfilled < requested;
-        }
     }
 
     /**

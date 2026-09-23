@@ -1,6 +1,6 @@
-package com.school.selfcheckout.config;
+package com.school.selfcheckout.admin;
 
-import com.school.selfcheckout.service.ResetService;
+import com.school.selfcheckout.config.AppProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;

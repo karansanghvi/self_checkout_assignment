@@ -55,6 +55,22 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <!--
+      Enforces the layering in src/test/.../LayeringTest.java.
+
+      Plain `archunit`, not `archunit-junit5`: with the latter, both the
+      ArchUnit engine and JUnit Jupiter discover an @AnalyzeClasses class, and
+      Jupiter wins under Surefire, so the rules silently report "Tests run: 0"
+      and enforce nothing. Driving the rules from ordinary @Test methods keeps
+      them visible in the test count.
+    -->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit</artifactId>
+      <version>1.4.1</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

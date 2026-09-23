@@ -1,6 +1,6 @@
 package com.school.selfcheckout.api;
 
-import com.school.selfcheckout.service.ResetService;
+import com.school.selfcheckout.admin.ResetService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,15 +21,11 @@ public class AdminController {
         this.resetService = resetService;
     }
 
+    /** Both parameters are optional; {@link ResetService} resolves nulls from configuration. */
     @PostMapping("/admin/reset")
     public Map<String, Object> reset(
             @RequestParam(required = false) Integer catalogSize,
             @RequestParam(required = false) Integer stockPerItem) {
-        if (catalogSize == null && stockPerItem == null) {
-            return resetService.reset();
-        }
-        return resetService.reset(
-                catalogSize != null ? catalogSize : 2000,
-                stockPerItem != null ? stockPerItem : 10000);
+        return resetService.reset(catalogSize, stockPerItem);
     }
 }

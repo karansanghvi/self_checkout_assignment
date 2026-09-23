@@ -1,15 +1,17 @@
-package com.school.selfcheckout.service;
+package com.school.selfcheckout.transactions;
 
-import com.school.selfcheckout.api.ApiException;
-import com.school.selfcheckout.api.dto.Dtos.Receipt;
-import com.school.selfcheckout.api.dto.Dtos.ReceiptLine;
-import com.school.selfcheckout.api.dto.Dtos.ScanResult;
-import com.school.selfcheckout.api.dto.Dtos.TransactionResponse;
+import com.school.selfcheckout.catalog.CatalogService;
+import com.school.selfcheckout.contract.Dtos.Receipt;
+import com.school.selfcheckout.contract.Dtos.ReceiptLine;
+import com.school.selfcheckout.contract.Dtos.ScanResult;
+import com.school.selfcheckout.contract.Dtos.TransactionResponse;
+import com.school.selfcheckout.domain.CheckoutException;
 import com.school.selfcheckout.domain.Item;
+import com.school.selfcheckout.domain.ScanTotals;
 import com.school.selfcheckout.domain.TransactionLine;
 import com.school.selfcheckout.domain.TransactionRow;
+import com.school.selfcheckout.analytics.PopularityService;
 import com.school.selfcheckout.repository.TransactionRepository;
-import com.school.selfcheckout.repository.TransactionRepository.ScanTotals;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,7 +39,7 @@ public class TransactionService {
 
     public TransactionResponse start(String stationId) {
         if (stationId == null || stationId.isBlank()) {
-            throw ApiException.invalidRequest("stationId is required");
+            throw CheckoutException.invalidRequest("stationId is required");
         }
         UUID id = UUID.randomUUID();
         Instant startedAt = transactionRepository.insertOpen(id, stationId);
@@ -67,7 +69,7 @@ public class TransactionService {
 
         Item item = catalogService.findBySku(sku);
         if (item == null) {
-            throw ApiException.unknownSku(sku);
+            throw CheckoutException.unknownSku(sku);
         }
 
         ScanTotals totals = transactionRepository.recordScan(id, sku, item.price());
@@ -107,7 +109,7 @@ public class TransactionService {
         if (lines.isEmpty()) {
             // Throwing rolls back the status flip above, leaving the
             // transaction OPEN -- which is what a 409 should mean.
-            throw ApiException.emptyBasket(transactionId);
+            throw CheckoutException.emptyBasket(transactionId);
         }
 
         inventoryService.applyBasket(id, lines);
@@ -143,16 +145,16 @@ public class TransactionService {
         UUID id = parseId(transactionId);
         TransactionRow row = transactionRepository.findById(id);
         if (row == null) {
-            throw ApiException.transactionNotFound(transactionId);
+            throw CheckoutException.transactionNotFound(transactionId);
         }
         return row;
     }
 
-    private ApiException notFoundOrNotOpen(UUID id, String rawId) {
+    private CheckoutException notFoundOrNotOpen(UUID id, String rawId) {
         String status = transactionRepository.findStatus(id);
         return status == null
-                ? ApiException.transactionNotFound(rawId)
-                : ApiException.transactionNotOpen(rawId, status);
+                ? CheckoutException.transactionNotFound(rawId)
+                : CheckoutException.transactionNotOpen(rawId, status);
     }
 
     /** A malformed id is a 404, not a 500 -- it simply identifies no transaction. */
@@ -160,7 +162,7 @@ public class TransactionService {
         try {
             return UUID.fromString(transactionId);
         } catch (IllegalArgumentException e) {
-            throw ApiException.transactionNotFound(transactionId);
+            throw CheckoutException.transactionNotFound(transactionId);
         }
     }
 

@@ -1,8 +1,9 @@
-package com.school.selfcheckout.service;
+package com.school.selfcheckout.analytics;
 
-import com.school.selfcheckout.api.dto.Dtos.PopularItem;
-import com.school.selfcheckout.api.dto.Dtos.PopularItemsResponse;
+import com.school.selfcheckout.catalog.CatalogService;
 import com.school.selfcheckout.config.AppProperties;
+import com.school.selfcheckout.contract.Dtos.PopularItem;
+import com.school.selfcheckout.contract.Dtos.PopularItemsResponse;
 import com.school.selfcheckout.domain.Item;
 import com.school.selfcheckout.domain.PopularEntry;
 import com.school.selfcheckout.domain.PopularWindow;

@@ -1,18 +1,22 @@
-package com.school.selfcheckout.service;
+package com.school.selfcheckout.transactions;
 
-import com.school.selfcheckout.api.dto.Dtos.LowStockAlert;
-import com.school.selfcheckout.api.dto.Dtos.LowStockResponse;
 import com.school.selfcheckout.config.AppProperties;
-import com.school.selfcheckout.domain.LowStockRow;
+import com.school.selfcheckout.domain.DecrementResult;
 import com.school.selfcheckout.domain.TransactionLine;
 import com.school.selfcheckout.repository.InventoryRepository;
-import com.school.selfcheckout.repository.InventoryRepository.DecrementResult;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * The stock-mutating half of inventory, and part of the checkout write path.
+ *
+ * Read-only low-stock reporting used to live here too; it now sits in
+ * {@code analytics.LowStockService}. The two shared no logic beyond the
+ * configured threshold, and they belong to different layers: this one runs
+ * inside the /complete transaction, that one answers a reporting query.
+ */
 @Service
 public class InventoryService {
 
@@ -53,25 +57,5 @@ public class InventoryService {
                 inventoryRepository.recordLowStockAlert(line.sku(), result.newStock(), threshold);
             }
         }
-    }
-
-    public LowStockResponse lowStock(Integer thresholdOverride) {
-        int threshold = thresholdOverride != null ? thresholdOverride : properties.getLowStockThreshold();
-        Instant generatedAt = Instant.now();
-
-        List<LowStockAlert> alerts = inventoryRepository.findBelowThreshold(threshold).stream()
-                .map(row -> toAlert(row, threshold, generatedAt))
-                .toList();
-
-        return new LowStockResponse(threshold, generatedAt, alerts);
-    }
-
-    private static LowStockAlert toAlert(LowStockRow row, int threshold, Instant fallback) {
-        return new LowStockAlert(
-                row.sku(),
-                row.name(),
-                row.stock(),
-                threshold,
-                row.triggeredAt() != null ? row.triggeredAt() : fallback);
     }
 }

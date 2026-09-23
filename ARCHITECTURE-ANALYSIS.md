@@ -13,13 +13,23 @@ A single deployable Spring Boot application over one PostgreSQL database,
 organised into conventional layers:
 
 ```
-api/         REST controllers + DTOs mirroring the OpenAPI contract
-service/     business logic (transactions, inventory, popularity, catalog)
-repository/  hand-written SQL via JdbcTemplate
-domain/      immutable records
+api/           REST controllers, status codes, error bodies
+transactions/  checkout write path: start, scan, complete, stock decrement
+analytics/     popularity windows and low-stock reporting
+admin/         reset and reseed (not part of the OpenAPI contract)
+catalog/       in-memory catalog read model, shared by the two above
+repository/    database access: hand-written SQL via JdbcTemplate
+contract/      wire DTOs mirroring the OpenAPI contract
+domain/        immutable records, error vocabulary
+config/        externalised properties
 ```
 
-**Size:** 1,562 lines of Java, 237 lines of SQL. No ORM — JdbcTemplate with
+Dependencies point strictly downward, and `contract/`, `domain/` and `config/`
+are dependency-free leaves any layer may use. The layering is enforced by
+ArchUnit rules in `LayeringTest`, not just by convention — see section 4,
+Evolvability.
+
+**Size:** 1,661 lines of Java (plus 423 of tests), 237 lines of SQL. No ORM — JdbcTemplate with
 explicit SQL, chosen so that the concurrency control is visible in the source
 rather than hidden behind a persistence framework's dirty-checking and
 optimistic-locking machinery.
@@ -216,16 +226,26 @@ One artifact, one database, one Flyway migration chain. Deployment is a JAR
 and a schema migration. The flip side is that any change — a pricing tweak or
 an analytics change — requires redeploying the whole application.
 
-### Evolvability — ★★☆☆☆
+### Evolvability — ★★★☆☆
 
-Layer boundaries are clean, but they are compile-time boundaries with no
-enforcement. Nothing prevents a controller from reaching into a repository.
-More significantly, the layers are organised *technically* (api / service /
-repository) rather than by domain, so a change to "inventory" touches three
-packages. Extracting inventory as an independent service later — as the
-service-based and microservices weeks require — means unpicking it from a
-shared transaction boundary, which is precisely where the correctness
-guarantees currently come from.
+Layer boundaries are explicit and enforced. `LayeringTest` fails the build if a
+controller reaches into a repository, if anything below the API layer depends on
+it, if a repository calls upward, or if HTTP types leak into the business
+layers. Status codes are chosen in exactly one place, so the transactions and
+analytics layers no longer know they are being served over HTTP.
+
+The business layers are also grouped by capability (`transactions/`,
+`analytics/`, `admin/`) rather than purely technically, which puts a real seam
+where the next split would go: `analytics/` depends on nothing in
+`transactions/`, and the only inbound call is `recordScan`. That is the
+cheapest thing in the codebase to extract.
+
+Still capped at three stars for the reason that has not changed: one deployable
+over one database, and the correctness guarantees come from a shared
+transaction boundary. Extracting inventory as an independent service — as the
+service-based and microservices weeks require — means giving up the single
+conditional `UPDATE` that makes concurrent stock decrements safe, and replacing
+it with something that coordinates across processes.
 
 ### Fault tolerance — ★☆☆☆☆
 

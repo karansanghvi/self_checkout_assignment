@@ -1,4 +1,4 @@
-package com.school.selfcheckout.api.dto;
+package com.school.selfcheckout.contract;
 
 import jakarta.validation.constraints.NotBlank;
 
@@ -12,6 +12,11 @@ import java.util.List;
  * The load client throws on any unexpected status code or missing field, so
  * these records are the contract: do not rename or reorder fields without
  * re-reading the spec.
+ *
+ * Lives in its own leaf package rather than under {@code api} so that the
+ * layers which assemble these responses -- transactions, analytics, catalog --
+ * do not have to import the API layer to do it. Nothing here depends on
+ * anything else in the application.
  */
 public final class Dtos {
 

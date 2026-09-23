@@ -1,11 +1,11 @@
 package com.school.selfcheckout.api;
 
-import com.school.selfcheckout.api.dto.Dtos.Receipt;
-import com.school.selfcheckout.api.dto.Dtos.ScanItemRequest;
-import com.school.selfcheckout.api.dto.Dtos.ScanResult;
-import com.school.selfcheckout.api.dto.Dtos.StartTransactionRequest;
-import com.school.selfcheckout.api.dto.Dtos.TransactionResponse;
-import com.school.selfcheckout.service.TransactionService;
+import com.school.selfcheckout.contract.Dtos.Receipt;
+import com.school.selfcheckout.contract.Dtos.ScanItemRequest;
+import com.school.selfcheckout.contract.Dtos.ScanResult;
+import com.school.selfcheckout.contract.Dtos.StartTransactionRequest;
+import com.school.selfcheckout.contract.Dtos.TransactionResponse;
+import com.school.selfcheckout.transactions.TransactionService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
