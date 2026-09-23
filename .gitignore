@@ -1,0 +1,10 @@
+# Reference material supplied with the assignment — not part of the deliverable.
+# It is a separate git repository, so it was tracked as a bare gitlink until
+# it was removed from the index with: git rm --cached reference-repo
+reference-repo/
+
+# Build output
+target/
+
+# Local secrets
+.env
