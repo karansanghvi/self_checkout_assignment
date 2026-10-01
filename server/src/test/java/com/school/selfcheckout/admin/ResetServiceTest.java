@@ -5,10 +5,12 @@ import com.school.selfcheckout.catalog.CatalogService;
 import com.school.selfcheckout.config.AppProperties;
 import com.school.selfcheckout.repository.ResetRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -62,10 +64,13 @@ class ResetServiceTest {
     void inMemoryStateIsResyncedAfterReseed() {
         Map<String, Object> result = newService(2000, 10000).reset(null, null);
 
-        // The catalog cache and the popularity window would otherwise still
-        // describe the previous run.
-        verify(catalogService).reload();
-        verify(popularityService).reset();
+        // The popularity pipeline is drained before the reseed, so no stale
+        // snapshot lands after the tables are emptied; the catalog cache is
+        // reloaded after it, so it describes the new data.
+        InOrder order = inOrder(popularityService, resetRepository, catalogService);
+        order.verify(popularityService).reset();
+        order.verify(resetRepository).reseed(2000, 10000);
+        order.verify(catalogService).reload();
 
         assertThat(result).containsEntry("status", "ok")
                 .containsEntry("catalogSize", 2000)

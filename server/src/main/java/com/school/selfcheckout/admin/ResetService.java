@@ -52,12 +52,16 @@ public class ResetService {
 
         long start = System.nanoTime();
 
+        // Drain the popularity pipeline first. Its reset returns only once
+        // nothing from the previous run is still in flight, so no stale
+        // snapshot can land in the tables after the reseed has emptied them.
+        popularityService.reset();
+
         resetRepository.reseed(catalogSize, stockPerItem);
 
-        // In-memory state has to follow the database, or the catalog cache and
-        // the popularity window would still describe the previous run.
+        // The catalog cache has to follow the database, or it would still
+        // describe the previous run.
         catalogService.reload();
-        popularityService.reset();
 
         long millis = (System.nanoTime() - start) / 1_000_000;
         log.info("Reset complete: {} items x {} units in {} ms", catalogSize, stockPerItem, millis);
