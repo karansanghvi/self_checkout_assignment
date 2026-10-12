@@ -18,8 +18,15 @@
 
 BEGIN;
 
+-- Bump the epoch first, as ResetRepository#reseed does: the running services
+-- watch it to learn that their in-memory state (catalog caches, the
+-- popularity window) is stale, and taking its row lock before the TRUNCATE is
+-- what stops analytics-service persisting a window from the old run.
+UPDATE system_epoch SET epoch = epoch + 1, reset_at = now() WHERE id = 1;
+
 TRUNCATE transaction_items,
          transactions,
+         scan_events,
          low_stock_alerts,
          popular_item_entries,
          popular_item_windows,
@@ -56,4 +63,5 @@ SELECT (SELECT count(*) FROM items)                     AS items,
        (SELECT count(*) FROM inventory)                 AS inventory_rows,
        (SELECT min(stock) FROM inventory)               AS min_stock,
        (SELECT max(stock) FROM inventory)               AS max_stock,
-       (SELECT count(*) FROM transactions)              AS transactions;
+       (SELECT count(*) FROM transactions)              AS transactions,
+       (SELECT epoch FROM system_epoch)                 AS epoch;

@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: catalog-service
+  config:
+    import: classpath:selfcheckout-common.yml
+  datasource:
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:2}
+      pool-name: catalog-service-pool
+
+server:
+  port: ${SERVER_PORT:8081}

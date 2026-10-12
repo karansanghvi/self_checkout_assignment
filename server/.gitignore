@@ -2,3 +2,6 @@ target/
 .env
 *.log
 !reports/.gitkeep
+
+# Logs and PIDs from scripts/run-all.sh
+run/

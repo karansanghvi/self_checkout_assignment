@@ -12,73 +12,162 @@
   </parent>
 
   <groupId>com.school</groupId>
-  <artifactId>self-checkout</artifactId>
+  <artifactId>self-checkout-parent</artifactId>
   <version>1.0.0</version>
+  <packaging>pom</packaging>
   <name>self-checkout</name>
-  <description>Layered Spring Boot implementation of the self-checkout API contract</description>
+  <description>Service-based implementation of the self-checkout API contract</description>
+
+  <!--
+    Module graph. The arrows are the whole architecture:
+
+      services/*  ──►  data/*  ──►  Postgres
+          │
+          └──►  common
+
+    No service module depends on another service module, so a service cannot
+    call another one even by accident - the classes are not on its classpath.
+    The only coupling between services is the data libraries they share.
+  -->
+  <modules>
+    <module>common</module>
+
+    <module>data/schema</module>
+    <module>data/system-data</module>
+    <module>data/catalog-data</module>
+    <module>data/inventory-data</module>
+    <module>data/checkout-data</module>
+    <module>data/analytics-data</module>
+
+    <module>services/catalog-service</module>
+    <module>services/checkout-service</module>
+    <module>services/inventory-service</module>
+    <module>services/analytics-service</module>
+    <module>services/admin-service</module>
+
+    <module>gateway</module>
+
+    <module>architecture-tests</module>
+  </modules>
 
   <properties>
     <java.version>21</java.version>
+    <spring-cloud.version>2025.0.0</spring-cloud.version>
+    <archunit.version>1.4.1</archunit.version>
   </properties>
 
-  <dependencies>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-jdbc</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-validation</artifactId>
-    </dependency>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
 
-    <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-database-postgresql</artifactId>
-    </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>common</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>schema</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>system-data</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>catalog-data</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>inventory-data</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>checkout-data</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>analytics-data</artifactId>
+        <version>${project.version}</version>
+      </dependency>
 
-    <dependency>
-      <groupId>org.postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <scope>runtime</scope>
-    </dependency>
+      <!-- The `exec`-classified fat jars are the deployables; these plain jars are for architecture-tests. -->
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>catalog-service</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>checkout-service</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>inventory-service</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>analytics-service</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.school</groupId>
+        <artifactId>admin-service</artifactId>
+        <version>${project.version}</version>
+      </dependency>
 
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-test</artifactId>
-      <scope>test</scope>
-    </dependency>
-
-    <!--
-      Enforces the layering in src/test/.../LayeringTest.java.
-
-      Plain `archunit`, not `archunit-junit5`: with the latter, both the
-      ArchUnit engine and JUnit Jupiter discover an @AnalyzeClasses class, and
-      Jupiter wins under Surefire, so the rules silently report "Tests run: 0"
-      and enforce nothing. Driving the rules from ordinary @Test methods keeps
-      them visible in the test count.
-    -->
-    <dependency>
-      <groupId>com.tngtech.archunit</groupId>
-      <artifactId>archunit</artifactId>
-      <version>1.4.1</version>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
+      <!--
+        Plain `archunit`, not `archunit-junit5`: with the latter, both the
+        ArchUnit engine and JUnit Jupiter discover an @AnalyzeClasses class,
+        and Jupiter wins under Surefire, so the rules silently report
+        "Tests run: 0" and enforce nothing.
+      -->
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit</artifactId>
+        <version>${archunit.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <build>
-    <plugins>
-      <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-      </plugin>
-    </plugins>
+    <pluginManagement>
+      <plugins>
+        <!--
+          Each deployable is repackaged as a separate `-exec` fat jar, leaving
+          the module's ordinary jar in place. That is what lets
+          architecture-tests put every service on one classpath and check the
+          rules across them.
+        -->
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <executions>
+            <execution>
+              <id>repackage</id>
+              <goals>
+                <goal>repackage</goal>
+              </goals>
+              <configuration>
+                <classifier>exec</classifier>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
   </build>
 </project>

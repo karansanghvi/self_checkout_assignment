@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: analytics-service
+  config:
+    import: classpath:selfcheckout-common.yml
+  datasource:
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:4}
+      pool-name: analytics-service-pool
+
+server:
+  port: ${SERVER_PORT:8084}
+
+app:
+  popularity:
+    # Hopping window, per the OpenAPI contract: count the most recent
+    # window-size scans, recompute every slide-interval scans.
+    window-size: 1000
+    slide-interval: 500

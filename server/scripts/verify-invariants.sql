@@ -72,3 +72,30 @@ SELECT ti.sku,
  GROUP BY ti.sku, inv.stock
  ORDER BY units_sold DESC
  LIMIT 10;
+
+\echo ''
+\echo '== 5. Scan feed: checkout -> scan_events -> analytics ==========='
+-- Every accepted scan is logged exactly once, in the same statement that put
+-- it in a basket, so the log must match the basket lines unit for unit
+-- (open and completed transactions alike). Analytics persists one window per
+-- slide_interval scans it consumed; with the feed caught up, that is
+-- floor(scans / slide_interval).
+WITH feed AS (
+    SELECT count(*)::bigint AS logged, COALESCE(max(seq), 0) AS max_seq FROM scan_events
+),
+lines AS (
+    SELECT COALESCE(SUM(quantity), 0)::bigint AS scanned FROM transaction_items
+),
+windows AS (
+    SELECT count(*)::bigint AS persisted, COALESCE(max(window_end), 0) AS last_end,
+           COALESCE(max(slide_interval), 500) AS slide
+      FROM popular_item_windows
+)
+SELECT lines.scanned                        AS units_in_baskets,
+       feed.logged                          AS scan_events_rows,
+       lines.scanned = feed.logged          AS feed_matches_baskets,
+       feed.max_seq - feed.logged           AS seq_gaps,
+       windows.persisted                    AS windows_persisted,
+       feed.logged / windows.slide          AS windows_expected,
+       windows.last_end                     AS last_window_end
+  FROM feed, lines, windows;

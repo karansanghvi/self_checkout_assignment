@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: gateway
+
+  # A gateway thread spends nearly all its time waiting on a downstream
+  # service, which is exactly what virtual threads are for: 100 stations need
+  # 100 cheap waiting threads, not a sized platform-thread pool.
+  threads:
+    virtual:
+      enabled: true
+
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: catalog
+              uri: ${CATALOG_URL:http://localhost:8081}
+              predicates:
+                - Path=/items
+            - id: checkout
+              uri: ${CHECKOUT_URL:http://localhost:8082}
+              predicates:
+                - Path=/transactions,/transactions/**
+            - id: inventory
+              uri: ${INVENTORY_URL:http://localhost:8083}
+              predicates:
+                - Path=/inventory/**
+            - id: analytics
+              uri: ${ANALYTICS_URL:http://localhost:8084}
+              predicates:
+                - Path=/analytics/**
+            - id: admin
+              uri: ${ADMIN_URL:http://localhost:8085}
+              predicates:
+                - Path=/admin/**
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

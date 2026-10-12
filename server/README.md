@@ -1,15 +1,23 @@
-# Self-Checkout — Layered Spring Boot + PostgreSQL
+# Self-Checkout — Service-Based Spring Boot + PostgreSQL
 
 Implements `reference-repo/spec/self-checkout-openapi.yaml` so the unmodified
 reference load client runs against it.
+
+The system is five domain services (catalog, checkout, inventory, analytics,
+admin) behind a gateway on :8080, sharing one database. See
+[`../SERVICES.md`](../SERVICES.md) for the service list and design.
 
 ## Setup
 
 ```bash
 cp .env.example .env && $EDITOR .env    # set DB_PASSWORD
 ./scripts/create-db.sh                  # create the self_checkout database
-./scripts/run-server.sh                 # Flyway migrates + seeds on first boot
+./scripts/build-all.sh                  # one -exec.jar per service
+./scripts/run-all.sh                    # admin-service migrates + seeds, then the rest start
+./scripts/stop-all.sh                   # when done
 ```
+
+Logs and PIDs land in `server/run/`.
 
 ## Between load-test runs
 
@@ -17,8 +25,9 @@ cp .env.example .env && $EDITOR .env    # set DB_PASSWORD
 ./scripts/reset-db.sh          # wipe + reseed 2,000 items x 10,000 units
 ```
 
-Equivalent alternatives: `POST /admin/reset`, or boot with
-`--app.reset-on-startup=true`.
+Equivalent alternatives: `POST /admin/reset`, or
+`RESET_ON_STARTUP=true ./scripts/run-all.sh`. Either way the running services
+see the bumped `system_epoch` and rebuild their in-memory state.
 
 ## Running the load test
 
@@ -115,12 +124,16 @@ Hopping window per the spec: the most recent `windowSize` (1000) **scans**,
 recomputed every `slideInterval` (500) scans. Note this counts scans, not
 completed purchases, and the window advances at scan time.
 
-A ring buffer holds the last 1,000 SKUs; every 500th scan a background thread
-counts it and persists a ranked snapshot to `popular_item_windows` /
-`popular_item_entries`. `GET /analytics/popular-items` serves the latest
-snapshot. Individual scans are not persisted — writing 1.8M rows per run to
-recompute a top-10 every 500 scans would dominate the latency numbers while
-measuring nothing.
+checkout-service appends every accepted scan to `scan_events`, in the same
+statement that adds it to the basket. analytics-service polls that table and
+feeds a window → rank → persist pipeline: a ring buffer holds the last 1,000
+SKUs, and every 500th scan a ranked snapshot is written to
+`popular_item_windows` / `popular_item_entries`. `GET /analytics/popular-items`
+serves the latest snapshot.
+
+Until week 3, individual scans were not persisted. They are now, because a
+separately deployed analytics service has no other way to see them; that row
+is part of the cost of the service split.
 
 ## Low stock
 
@@ -157,7 +170,13 @@ below a threshold" and an optional per-query `?threshold=` override:
 | `app.catalog-size` | 2000 | items to seed |
 | `app.stock-per-item` | 10000 | starting stock per SKU |
 | `app.reset-on-startup` | false | wipe + reseed at boot |
-| `DB_POOL_SIZE` | 32 | Hikari max pool size |
+| `DB_POOL_SIZE` | per service | Hikari max pool size: checkout 32, analytics 4, inventory 4, catalog 2, admin 2 |
 
-The pool is deliberately smaller than the station count: briefly queuing at the
-pool is much cheaper than driving 100 concurrent Postgres backends.
+Checkout's pool is deliberately smaller than the station count: briefly queuing
+at the pool is much cheaper than driving 100 concurrent Postgres backends. All
+five pools together (44) stay well under Postgres's default
+`max_connections` of 100.
+
+`app.catalog-size`, `app.stock-per-item` and `app.reset-on-startup` belong to
+admin-service; `app.popularity.*` to analytics-service;
+`app.low-stock-threshold` is shared, in `common/.../selfcheckout-common.yml`.

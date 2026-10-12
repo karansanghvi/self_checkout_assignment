@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: inventory-service
+  config:
+    import: classpath:selfcheckout-common.yml
+  datasource:
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:4}
+      pool-name: inventory-service-pool
+
+server:
+  port: ${SERVER_PORT:8083}
