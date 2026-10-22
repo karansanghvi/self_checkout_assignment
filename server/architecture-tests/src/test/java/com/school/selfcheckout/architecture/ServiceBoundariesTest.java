@@ -6,26 +6,33 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Machine-checked statement of the service-based architecture.
+ * Machine-checked statement of the microservice boundaries.
  *
  * Maven already stops a service from compiling against another service --
- * none declares one as a dependency. This test puts all five on a single
- * classpath anyway, so the rules can be stated and checked in one place,
- * including the ones Maven cannot see: which shared data each service is
- * coupled to, and that no service makes outbound HTTP calls.
+ * none declares one as a dependency, and there are no shared data libraries
+ * left to couple them. This test puts all five on a single classpath anyway,
+ * so the rules about <i>how</i> they may talk can be stated and checked in
+ * one place:
+ *
+ * <pre>
+ *   checkout  --HTTP-->  inventory   POST /internal/stock-commits   (the completion saga)
+ *   checkout  --HTTP-->  catalog     GET /items                     (catalog replica)
+ *   inventory --HTTP-->  catalog     GET /items                     (reseed at reset)
+ *   analytics --HTTP-->  catalog     GET /items                     (catalog replica)
+ *   admin     --HTTP-->  all four    POST /internal/reset           (reset fan-out)
+ *   checkout  --Kafka-> analytics    scan-events topic              (outbox relay)
+ * </pre>
  *
  * Packages:
  *
  *   service.{catalog,checkout,inventory,analytics,admin}   the deployable services
- *   data.{catalog,inventory,checkout,analytics,system}     shared database access, one library per domain
- *   contract, domain, web                                  the common library
+ *   contract, domain, web, client                          the common library
  */
 class ServiceBoundariesTest {
 
@@ -35,25 +42,23 @@ class ServiceBoundariesTest {
             .withImportOption(new ImportOption.DoNotIncludeTests())
             .importPackages(BASE);
 
-    /**
-     * The coupling matrix: each service and the data libraries it may touch.
-     * This is the whole answer to "how is shared database access distributed"
-     * -- and the one place to look to see which services a schema change hits.
-     */
-    private static final Map<String, List<String>> ALLOWED_DATA = Map.of(
-            "catalog", List.of("catalog", "system"),
-            "checkout", List.of("checkout", "inventory", "catalog", "system"),
-            "inventory", List.of("inventory"),
-            "analytics", List.of("analytics", "catalog", "system"),
-            "admin", List.of("system"));
+    private static final List<String> SERVICES = List.of("catalog", "checkout", "inventory", "analytics", "admin");
 
-    private static final List<String> DATA_LIBRARIES =
-            List.of("catalog", "inventory", "checkout", "analytics", "system");
+    private static final String[] HTTP_CLIENTS = {
+            "java.net.http..",
+            "org.springframework.web.client..",
+            "org.springframework.web.reactive.function.client..",
+            "org.apache.hc..",
+            BASE + ".client.."};
+
+    private static String service(String name) {
+        return BASE + ".service." + name + "..";
+    }
 
     /** Guards against the rules below silently passing on an empty import. */
     @Test
     void everyServiceWasActuallyImported() {
-        for (String service : ALLOWED_DATA.keySet()) {
+        for (String service : SERVICES) {
             assertThat(CLASSES.stream().anyMatch(c -> c.getPackageName().startsWith(BASE + ".service." + service)))
                     .as("classes of %s-service on the classpath", service)
                     .isTrue();
@@ -64,81 +69,72 @@ class ServiceBoundariesTest {
     void servicesDoNotDependOnEachOther() {
         slices().matching(BASE + ".service.(*)..")
                 .should().notDependOnEachOther()
-                .because("services coordinate only through the shared database")
+                .because("services talk over HTTP and Kafka, never through each other's classes")
                 .check(CLASSES);
     }
 
+    /** catalog-service is a leaf: everyone reads from it, it calls no one. */
     @Test
-    void servicesTouchOnlyTheirDeclaredData() {
-        for (Map.Entry<String, List<String>> entry : ALLOWED_DATA.entrySet()) {
-            String[] forbidden = DATA_LIBRARIES.stream()
-                    .filter(lib -> !entry.getValue().contains(lib))
-                    .map(lib -> BASE + ".data." + lib + "..")
-                    .toArray(String[]::new);
-            if (forbidden.length == 0) {
-                continue;
-            }
-            noClasses().that().resideInAPackage(BASE + ".service." + entry.getKey() + "..")
-                    .should().dependOnClassesThat().resideInAnyPackage(forbidden)
-                    .because(entry.getKey() + "-service's data coupling is " + entry.getValue())
-                    .check(CLASSES);
-        }
+    void catalogCallsNoOtherService() {
+        noClasses().that().resideInAPackage(service("catalog"))
+                .should().dependOnClassesThat().resideInAnyPackage(HTTP_CLIENTS)
+                .because("catalog-service depends on nothing but its own database")
+                .check(CLASSES);
     }
 
-    /** "Services should not communicate directly": none of them holds an HTTP client. */
+    /** admin-service orchestrates; it owns no data, so it has no way to reach a database. */
     @Test
-    void servicesMakeNoOutboundHttpCalls() {
-        noClasses().that().resideInAPackage(BASE + ".service..")
+    void adminHasNoDatabase() {
+        noClasses().that().resideInAPackage(service("admin"))
                 .should().dependOnClassesThat().resideInAnyPackage(
-                        "java.net.http..",
-                        "org.springframework.web.client..",
-                        "org.springframework.web.reactive.function.client..",
-                        "org.apache.hc..")
-                .because("a service may not call another service")
+                        "org.springframework.jdbc..", "javax.sql..", "java.sql..")
+                .because("admin-service resets the system by asking each service to reset its own data")
                 .check(CLASSES);
     }
 
-    /** The data libraries are leaves: they know SQL and records, not services or HTTP. */
+    /** Kafka is the scan feed's transport and nothing else's: checkout produces, analytics consumes. */
     @Test
-    void dataLibrariesDoNotReachUpwards() {
-        noClasses().that().resideInAPackage(BASE + ".data..")
-                .should().dependOnClassesThat().resideInAnyPackage(
-                        BASE + ".service..", BASE + ".web..", BASE + ".contract..",
-                        "org.springframework.web..", "org.springframework.http..")
+    void onlyCheckoutAndAnalyticsUseKafka() {
+        noClasses().that().resideInAnyPackage(service("catalog"), service("inventory"), service("admin"))
+                .should().dependOnClassesThat().resideInAPackage("org.apache.kafka..")
+                .check(CLASSES);
+        noClasses().that().resideInAPackage(service("checkout"))
+                .should().dependOnClassesThat().resideInAPackage("org.apache.kafka.clients.consumer..")
+                .because("checkout-service only publishes scan events")
+                .check(CLASSES);
+        noClasses().that().resideInAPackage(service("analytics"))
+                .should().dependOnClassesThat().resideInAPackage("org.apache.kafka.clients.producer..")
+                .because("analytics-service only consumes scan events")
                 .check(CLASSES);
     }
 
-    /**
-     * Domain data libraries are independent of each other. The one exception
-     * is system, which every library may use for the reset epoch.
-     */
+    /** The stock-commit step of the saga is a contract between exactly two services. */
     @Test
-    void domainDataLibrariesAreIndependent() {
-        List<String> domains = DATA_LIBRARIES.stream().filter(lib -> !lib.equals("system")).toList();
-        for (String lib : domains) {
-            String[] others = domains.stream()
-                    .filter(other -> !other.equals(lib))
-                    .map(other -> BASE + ".data." + other + "..")
-                    .toArray(String[]::new);
-            noClasses().that().resideInAPackage(BASE + ".data." + lib + "..")
-                    .should().dependOnClassesThat().resideInAnyPackage(others)
-                    .check(CLASSES);
-        }
+    void stockCommitContractIsBetweenCheckoutAndInventoryOnly() {
+        noClasses().that().resideInAnyPackage(service("catalog"), service("analytics"), service("admin"))
+                .should().dependOnClassesThat().haveSimpleNameStartingWith("StockCommit")
+                .check(CLASSES);
     }
 
     /** The common library is the bottom of the stack. */
     @Test
     void commonDependsOnNothingOfOurs() {
-        noClasses().that().resideInAnyPackage(BASE + ".contract..", BASE + ".domain..", BASE + ".web..")
-                .should().dependOnClassesThat().resideInAnyPackage(BASE + ".service..", BASE + ".data..")
+        noClasses().that().resideInAnyPackage(
+                        BASE + ".contract..", BASE + ".domain..", BASE + ".web..", BASE + ".client..")
+                .should().dependOnClassesThat().resideInAnyPackage(BASE + ".service..")
                 .check(CLASSES);
     }
 
-    /** Status codes are chosen in exactly one place, {@code GlobalExceptionHandler}. */
+    /**
+     * Status codes are chosen in exactly one place, {@code GlobalExceptionHandler}.
+     * Controllers bind HTTP, and outbound clients read the statuses other
+     * services return; service logic does neither.
+     */
     @Test
     void serviceLogicDoesNotChooseHttpStatuses() {
         noClasses().that().resideInAPackage(BASE + ".service..")
                 .and().haveSimpleNameNotEndingWith("Controller")
+                .and().haveSimpleNameNotEndingWith("Client")
                 .should().dependOnClassesThat().resideInAnyPackage(
                         "org.springframework.http..", "jakarta.servlet..")
                 .because("choosing HTTP status codes is GlobalExceptionHandler's job")

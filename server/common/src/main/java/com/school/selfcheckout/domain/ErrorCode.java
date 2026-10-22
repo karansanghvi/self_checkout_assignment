@@ -18,5 +18,11 @@ public enum ErrorCode {
     UNKNOWN_SKU,
     TRANSACTION_NOT_OPEN,
     EMPTY_BASKET,
-    INVALID_REQUEST
+    INVALID_REQUEST,
+    /**
+     * Another service this request depends on could not be reached, or
+     * refused the request. Not in the OpenAPI contract: it exists because a
+     * microservice can fail in a way a single process cannot.
+     */
+    DEPENDENCY_FAILED
 }

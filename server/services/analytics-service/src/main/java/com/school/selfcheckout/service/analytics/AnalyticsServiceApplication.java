@@ -4,11 +4,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Analytics service: hopping-window popularity, fed by the scan event log.
+ * Analytics service: hopping-window popularity, fed from the scan-events Kafka topic.
  *
- * Scans all of {@code com.school.selfcheckout} so it picks up the beans in the
- * libraries on its classpath -- common and the data libraries this module
- * declares. Nothing else is on the classpath, so nothing else is found.
+ * Scans all of {@code com.school.selfcheckout} so it picks up the shared
+ * error handler from the common library. No other service's classes are on
+ * the classpath, so nothing else is found.
  */
 @SpringBootApplication(scanBasePackages = "com.school.selfcheckout")
 public class AnalyticsServiceApplication {

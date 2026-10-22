@@ -138,4 +138,14 @@ class ApiContractSmokeTest {
                         .content("{}"))
                 .andExpect(status().isConflict());
     }
+
+    @Test
+    void anUnreachableDependencyIs503() throws Exception {
+        when(transactionService.complete(anyString()))
+                .thenThrow(CheckoutException.dependencyFailed("inventory-service is unavailable"));
+
+        mvc.perform(post("/transactions/1a2b/complete"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("DEPENDENCY_FAILED"));
+    }
 }

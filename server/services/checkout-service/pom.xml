@@ -12,7 +12,7 @@
   </parent>
 
   <artifactId>checkout-service</artifactId>
-  <description>The transaction lifecycle: start, scan, complete, get</description>
+  <description>The transaction lifecycle, orchestrator of the completion saga, owner of checkout_db and its scan outbox</description>
 
   <dependencies>
     <dependency>
@@ -20,16 +20,21 @@
       <artifactId>common</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.school</groupId>
-      <artifactId>checkout-data</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.school</groupId>
-      <artifactId>inventory-data</artifactId>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.school</groupId>
-      <artifactId>catalog-data</artifactId>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+    <!-- Plain client, not spring-kafka: the relay is one producer on one thread. -->
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

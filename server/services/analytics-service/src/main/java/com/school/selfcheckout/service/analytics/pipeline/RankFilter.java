@@ -1,6 +1,6 @@
 package com.school.selfcheckout.service.analytics.pipeline;
 
-import com.school.selfcheckout.data.analytics.PopularEntry;
+import com.school.selfcheckout.service.analytics.PopularEntry;
 
 import java.util.ArrayList;
 import java.util.Comparator;

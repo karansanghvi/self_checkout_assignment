@@ -3,10 +3,21 @@ spring:
     name: catalog-service
   config:
     import: classpath:selfcheckout-common.yml
+
+  # catalog_db is this service's alone; no other service has credentials for it.
   datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${CATALOG_DB_NAME:catalog_db}
+    username: ${CATALOG_DB_USER:catalog_svc}
+    password: ${SERVICE_DB_PASSWORD}
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:2}
+      minimum-idle: 1
+      connection-timeout: 10000
       pool-name: catalog-service-pool
+
+  # Each service migrates its own schema on startup.
+  flyway:
+    enabled: true
 
 server:
   port: ${SERVER_PORT:8081}

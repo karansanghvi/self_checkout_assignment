@@ -1,11 +1,10 @@
 package com.school.selfcheckout.service.analytics;
 
+import com.school.selfcheckout.client.CatalogReplica;
+import com.school.selfcheckout.contract.Dtos.CatalogItem;
 import com.school.selfcheckout.contract.Dtos.PopularItem;
 import com.school.selfcheckout.contract.Dtos.PopularItemsResponse;
-import com.school.selfcheckout.data.analytics.PopularWindow;
-import com.school.selfcheckout.data.analytics.PopularityRepository;
-import com.school.selfcheckout.data.catalog.CatalogCache;
-import com.school.selfcheckout.data.catalog.Item;
+import com.school.selfcheckout.domain.CheckoutException;
 import com.school.selfcheckout.service.analytics.pipeline.PopularityPipeline;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -19,21 +18,21 @@ import java.util.List;
  * The contract asks for the top items among the most recent {@code windowSize}
  * scans, recomputed every {@code slideInterval} scans. The computation lives in
  * {@link PopularityPipeline} -- a window -> rank -> persist chain of filters on
- * their own threads -- fed by {@link ScanFeed} from the {@code scan_events}
- * table that checkout-service writes. This class serves the latest persisted
- * snapshot.
+ * their own threads -- fed by {@link ScanConsumer} from the Kafka topic that
+ * checkout-service's outbox relay publishes to. This class serves the latest
+ * persisted snapshot, from analytics_db.
  */
 @Service
 public class PopularityService {
 
     private final PopularityRepository popularityRepository;
-    private final CatalogCache catalog;
+    private final CatalogReplica catalog;
     private final PopularityPipeline pipeline;
     private final int windowSize;
     private final int slideInterval;
 
     public PopularityService(PopularityRepository popularityRepository,
-                             CatalogCache catalog,
+                             CatalogReplica catalog,
                              PopularityPipeline pipeline,
                              @Value("${app.popularity.window-size:1000}") int windowSize,
                              @Value("${app.popularity.slide-interval:500}") int slideInterval) {
@@ -75,8 +74,13 @@ public class PopularityService {
         return pipeline.currentSequence();
     }
 
+    /** Falls back to the SKU if catalog-service has never been reachable: a ranking without names beats a 503. */
     private String nameOf(String sku) {
-        Item item = catalog.findBySku(sku);
-        return item != null ? item.name() : sku;
+        try {
+            CatalogItem item = catalog.findBySku(sku);
+            return item != null ? item.name() : sku;
+        } catch (CheckoutException e) {
+            return sku;
+        }
     }
 }

@@ -16,32 +16,25 @@
   <version>1.0.0</version>
   <packaging>pom</packaging>
   <name>self-checkout</name>
-  <description>Service-based implementation of the self-checkout API contract</description>
+  <description>Microservices implementation of the self-checkout API contract</description>
 
   <!--
-    Module graph. The arrows are the whole architecture:
+    Module graph:
 
-      services/*  ──►  data/*  ──►  Postgres
-          │
-          └──►  common
+      services/*  ──►  common          (wire contract, errors, HTTP helpers)
+      services/*  ──►  their OWN database, never another service's
 
-    No service module depends on another service module, so a service cannot
-    call another one even by accident - the classes are not on its classpath.
-    The only coupling between services is the data libraries they share.
+    No service module depends on another service module or on any shared
+    data library (there are none). Services reach each other only over HTTP
+    (the stock-commit saga, the catalog replica, the reset fan-out) or through
+    Kafka (the scan feed).
   -->
   <modules>
     <module>common</module>
 
-    <module>data/schema</module>
-    <module>data/system-data</module>
-    <module>data/catalog-data</module>
-    <module>data/inventory-data</module>
-    <module>data/checkout-data</module>
-    <module>data/analytics-data</module>
-
     <module>services/catalog-service</module>
-    <module>services/checkout-service</module>
     <module>services/inventory-service</module>
+    <module>services/checkout-service</module>
     <module>services/analytics-service</module>
     <module>services/admin-service</module>
 
@@ -71,37 +64,6 @@
         <artifactId>common</artifactId>
         <version>${project.version}</version>
       </dependency>
-      <dependency>
-        <groupId>com.school</groupId>
-        <artifactId>schema</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.school</groupId>
-        <artifactId>system-data</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.school</groupId>
-        <artifactId>catalog-data</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.school</groupId>
-        <artifactId>inventory-data</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.school</groupId>
-        <artifactId>checkout-data</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.school</groupId>
-        <artifactId>analytics-data</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-
       <!-- The `exec`-classified fat jars are the deployables; these plain jars are for architecture-tests. -->
       <dependency>
         <groupId>com.school</groupId>

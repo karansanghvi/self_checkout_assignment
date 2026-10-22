@@ -12,7 +12,7 @@
   </parent>
 
   <artifactId>admin-service</artifactId>
-  <description>POST /admin/reset, and owner of the schema migrations</description>
+  <description>POST /admin/reset: a stateless orchestrator that resets every other service in turn. Owns no database.</description>
 
   <dependencies>
     <dependency>
@@ -20,29 +20,8 @@
       <artifactId>common</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.school</groupId>
-      <artifactId>system-data</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.school</groupId>
-      <artifactId>schema</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-database-postgresql</artifactId>
-    </dependency>
-    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <scope>runtime</scope>
     </dependency>
 
     <dependency>

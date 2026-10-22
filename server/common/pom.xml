@@ -12,7 +12,7 @@
   </parent>
 
   <artifactId>common</artifactId>
-  <description>Wire contract, business errors, and the shared HTTP error mapping. No database access.</description>
+  <description>Wire contract (public and internal), business errors, the shared HTTP error mapping, and the HTTP helpers services use to call each other. No database access.</description>
 
   <dependencies>
     <dependency>

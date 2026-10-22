@@ -43,6 +43,7 @@ public class GlobalExceptionHandler {
             case NOT_FOUND, UNKNOWN_SKU -> HttpStatus.NOT_FOUND;
             case TRANSACTION_NOT_OPEN, EMPTY_BASKET -> HttpStatus.CONFLICT;
             case INVALID_REQUEST -> HttpStatus.BAD_REQUEST;
+            case DEPENDENCY_FAILED -> HttpStatus.SERVICE_UNAVAILABLE;
         };
     }
 

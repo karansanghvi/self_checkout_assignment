@@ -1,35 +1,28 @@
 package com.school.selfcheckout.service.checkout;
 
+import com.school.selfcheckout.client.CatalogReplica;
+import com.school.selfcheckout.contract.Dtos.CatalogItem;
 import com.school.selfcheckout.contract.Dtos.Receipt;
-import com.school.selfcheckout.contract.Dtos.ReceiptLine;
 import com.school.selfcheckout.contract.Dtos.ScanResult;
 import com.school.selfcheckout.contract.Dtos.TransactionResponse;
-import com.school.selfcheckout.data.catalog.CatalogCache;
-import com.school.selfcheckout.data.catalog.Item;
-import com.school.selfcheckout.data.checkout.ScanTotals;
-import com.school.selfcheckout.data.checkout.TransactionLine;
-import com.school.selfcheckout.data.checkout.TransactionRepository;
-import com.school.selfcheckout.data.checkout.TransactionRow;
 import com.school.selfcheckout.domain.CheckoutException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 @Service
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
-    private final StockService stockService;
-    private final CatalogCache catalog;
+    private final CompletionSaga completionSaga;
+    private final CatalogReplica catalog;
 
     public TransactionService(TransactionRepository transactionRepository,
-                              StockService stockService,
-                              CatalogCache catalog) {
+                              CompletionSaga completionSaga,
+                              CatalogReplica catalog) {
         this.transactionRepository = transactionRepository;
-        this.stockService = stockService;
+        this.completionSaga = completionSaga;
         this.catalog = catalog;
     }
 
@@ -48,7 +41,7 @@ public class TransactionService {
         return new TransactionResponse(
                 row.id().toString(),
                 row.stationId(),
-                row.status(),
+                wireStatus(row.status()),
                 row.itemCount(),
                 row.runningTotal(),
                 row.startedAt());
@@ -57,15 +50,15 @@ public class TransactionService {
     /**
      * Scans one physical unit into the basket.
      *
-     * Price comes from this service's own copy of the catalog cache, so the
-     * whole operation is one database round trip. That same statement appends
-     * the scan to {@code scan_events}, which is how analytics-service hears
-     * about it -- there is no call to make.
+     * Price comes from this service's replica of the catalog, so the whole
+     * operation is one round trip to checkout_db and no call to
+     * catalog-service. The same statement appends the scan to the outbox,
+     * which is how analytics-service hears about it.
      */
     public ScanResult scan(String transactionId, String sku) {
         UUID id = parseId(transactionId);
 
-        Item item = catalog.findBySku(sku);
+        CatalogItem item = catalog.findBySku(sku);
         if (item == null) {
             throw CheckoutException.unknownSku(sku);
         }
@@ -81,57 +74,50 @@ public class TransactionService {
     }
 
     /**
-     * Completes the transaction and decrements stock for every scanned unit.
+     * Completes the transaction: step 1 of the saga here, the rest in
+     * {@link CompletionSaga}.
      *
-     * Every inventory row lock taken here is held until commit, so the body is
-     * kept to the minimum: claim the transaction, read the lines, decrement.
-     * Receipt assembly adds no further database work -- item names come from
-     * the in-memory catalog cache, and the totals were already returned by the
-     * claiming UPDATE.
+     * A transaction already in COMPLETING is an earlier completion that did
+     * not finish -- typically inventory-service was unreachable and the
+     * client got a 503. Calling /complete again resumes that saga rather
+     * than refusing it. Inventory's idempotency makes this safe even if the
+     * earlier attempt did reach it.
      */
-    @Transactional
     public Receipt complete(String transactionId) {
         UUID id = parseId(transactionId);
 
         TransactionRow claimed = transactionRepository.claimForCompletion(id);
         if (claimed == null) {
-            throw notFoundOrNotOpen(id, transactionId);
+            TransactionRow current = transactionRepository.findById(id);
+            if (current == null) {
+                throw CheckoutException.transactionNotFound(transactionId);
+            }
+            switch (current.status()) {
+                case "COMPLETING" -> claimed = current;
+                case "OPEN" -> {
+                    if (current.itemCount() == 0) {
+                        throw CheckoutException.emptyBasket(transactionId);
+                    }
+                    // A rejected saga reopened it between our two reads; it is fair game again.
+                    claimed = transactionRepository.claimForCompletion(id);
+                    if (claimed == null) {
+                        throw CheckoutException.transactionBeingCompleted(transactionId);
+                    }
+                }
+                default -> throw CheckoutException.transactionNotOpen(transactionId, current.status());
+            }
         }
 
-        List<TransactionLine> lines = transactionRepository.findLinesOrderedBySku(id);
-        if (lines.isEmpty()) {
-            // Throwing rolls back the status flip above, leaving the
-            // transaction OPEN -- which is what a 409 should mean.
-            throw CheckoutException.emptyBasket(transactionId);
-        }
-
-        stockService.applyBasket(id, lines);
-
-        return buildReceipt(transactionId, claimed, lines);
+        return completionSaga.drive(claimed);
     }
 
-    private Receipt buildReceipt(String transactionId, TransactionRow tx, List<TransactionLine> lines) {
-        List<ReceiptLine> receiptLines = lines.stream()
-                .map(line -> new ReceiptLine(
-                        line.sku(),
-                        nameOf(line.sku()),
-                        line.unitPrice(),
-                        line.quantity()))
-                .toList();
-
-        return new Receipt(
-                transactionId,
-                tx.stationId(),
-                tx.itemCount(),
-                tx.runningTotal(),
-                tx.startedAt(),
-                tx.completedAt() != null ? tx.completedAt() : Instant.now(),
-                receiptLines);
-    }
-
-    private String nameOf(String sku) {
-        Item item = catalog.findBySku(sku);
-        return item != null ? item.name() : sku;
+    /**
+     * COMPLETING is internal saga state. The contract's status enum is
+     * OPEN | COMPLETED | CANCELLED, and until the saga finishes the basket
+     * has not been sold, so it is reported as OPEN.
+     */
+    private static String wireStatus(String status) {
+        return "COMPLETING".equals(status) ? "OPEN" : status;
     }
 
     private TransactionRow requireExisting(String transactionId) {
@@ -145,8 +131,11 @@ public class TransactionService {
 
     private CheckoutException notFoundOrNotOpen(UUID id, String rawId) {
         String status = transactionRepository.findStatus(id);
-        return status == null
-                ? CheckoutException.transactionNotFound(rawId)
+        if (status == null) {
+            return CheckoutException.transactionNotFound(rawId);
+        }
+        return "COMPLETING".equals(status)
+                ? CheckoutException.transactionBeingCompleted(rawId)
                 : CheckoutException.transactionNotOpen(rawId, status);
     }
 

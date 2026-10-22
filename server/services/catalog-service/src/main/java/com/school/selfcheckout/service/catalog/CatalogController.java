@@ -2,7 +2,6 @@ package com.school.selfcheckout.service.catalog;
 
 import com.school.selfcheckout.contract.Dtos.CatalogItem;
 import com.school.selfcheckout.contract.Dtos.CatalogResponse;
-import com.school.selfcheckout.data.catalog.CatalogCache;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 

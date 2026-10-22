@@ -1,7 +1,5 @@
 package com.school.selfcheckout.service.catalog;
 
-import com.school.selfcheckout.data.catalog.CatalogCache;
-import com.school.selfcheckout.data.catalog.Item;
 import com.school.selfcheckout.web.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;

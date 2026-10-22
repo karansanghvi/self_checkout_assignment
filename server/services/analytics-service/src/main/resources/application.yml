@@ -3,15 +3,31 @@ spring:
     name: analytics-service
   config:
     import: classpath:selfcheckout-common.yml
+
+  # analytics_db is this service's alone; no other service has credentials for it.
   datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${ANALYTICS_DB_NAME:analytics_db}
+    username: ${ANALYTICS_DB_USER:analytics_svc}
+    password: ${SERVICE_DB_PASSWORD}
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:4}
+      minimum-idle: 1
+      connection-timeout: 10000
       pool-name: analytics-service-pool
+
+  flyway:
+    enabled: true
 
 server:
   port: ${SERVER_PORT:8084}
 
 app:
+  catalog-url: ${CATALOG_URL:http://localhost:8081}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    scan-topic: scan-events
+
   popularity:
     # Hopping window, per the OpenAPI contract: count the most recent
     # window-size scans, recompute every slide-interval scans.

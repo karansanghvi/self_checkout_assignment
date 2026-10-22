@@ -1,6 +1,6 @@
 package com.school.selfcheckout.service.analytics.pipeline;
 
-import com.school.selfcheckout.data.analytics.PopularityRepository;
+import com.school.selfcheckout.service.analytics.PopularityRepository;
 
 /**
  * Stage 3, the sink: writes each ranked window to Postgres, where

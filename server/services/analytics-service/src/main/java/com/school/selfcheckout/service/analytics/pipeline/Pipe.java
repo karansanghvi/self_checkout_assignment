@@ -24,8 +24,8 @@ final class Pipe<T> {
     enum Overflow {
         /**
          * Wait for room. Right for raw scans now that the source is the
-         * {@code scan_events} poller rather than a request thread: waiting
-         * slows only the poller, and the table holds the backlog durably.
+         * Kafka consumer rather than a request thread: waiting
+         * slows only the consumer, and the topic holds the backlog durably.
          */
         BLOCK,
         /** Refuse the incoming item. */

@@ -1,7 +1,7 @@
 package com.school.selfcheckout.service.analytics.pipeline;
 
-import com.school.selfcheckout.data.analytics.PopularEntry;
-import com.school.selfcheckout.data.analytics.PopularityRepository;
+import com.school.selfcheckout.service.analytics.PopularEntry;
+import com.school.selfcheckout.service.analytics.PopularityRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -28,7 +28,7 @@ class PopularityPipelineTest {
     private final PopularityRepository repository = mock(PopularityRepository.class);
     private PopularityPipeline pipeline;
 
-    /** Started and reset to {@link #EPOCH}, as ScanFeed does on its first poll. */
+    /** Started and reset to {@link #EPOCH}, as ScanConsumer does on its first poll. */
     private PopularityPipeline newPipeline(int windowSize, int slideInterval) {
         pipeline = new PopularityPipeline(repository, windowSize, slideInterval);
         pipeline.start();

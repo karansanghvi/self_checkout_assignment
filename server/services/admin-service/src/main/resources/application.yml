@@ -3,23 +3,17 @@ spring:
     name: admin-service
   config:
     import: classpath:selfcheckout-common.yml
-  datasource:
-    hikari:
-      maximum-pool-size: ${DB_POOL_SIZE:2}
-      pool-name: admin-service-pool
-
-  # admin-service alone owns the schema: it is the only module with Flyway on
-  # its classpath, so it is the only one that migrates. Start it first.
-  flyway:
-    enabled: true
-    baseline-on-migrate: true
 
 server:
   port: ${SERVER_PORT:8085}
 
+# admin-service owns no data and has no database. A reset is a fan-out to the
+# services that do; see ResetService for the order and why it matters.
 app:
-  # Wipe and reseed on boot. Off by default; scripts/reset-db.sh and
-  # POST /admin/reset are the usual routes.
-  reset-on-startup: false
   catalog-size: 2000
   stock-per-item: 10000
+  services:
+    catalog-url: ${CATALOG_URL:http://localhost:8081}
+    inventory-url: ${INVENTORY_URL:http://localhost:8083}
+    analytics-url: ${ANALYTICS_URL:http://localhost:8084}
+    checkout-url: ${CHECKOUT_URL:http://localhost:8082}

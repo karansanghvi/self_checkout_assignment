@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Start all six processes in the background, each from its own jar, and wait
-# until every one reports healthy. Logs and PIDs go to server/run/.
+# Start all six processes in the background, each from its own jar, wait
+# until every one reports healthy, then reset the system so all four
+# databases start from the same seed under one epoch. Logs and PIDs go to
+# server/run/.
 #
 #   ./run-all.sh
-#   RESET_ON_STARTUP=true ./run-all.sh      # admin-service wipes + reseeds at boot
+#   RESET_ON_STARTUP=false ./run-all.sh     # keep whatever data the databases hold
 #
-# Stop them with ./stop-all.sh.
+# Needs Kafka (./kafka-up.sh) and the databases (./create-db.sh).
+# Stop with ./stop-all.sh.
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./db-env.sh
@@ -39,23 +42,25 @@ start() { # name dir port heap
     echo "ERROR: $name is already running (pid $(cat "$RUN_DIR/$name.pid")). Run ./stop-all.sh first." >&2
     exit 1
   fi
-  local extra=()
-  if [ "$name" = "admin-service" ] && [ "${RESET_ON_STARTUP:-false}" = "true" ]; then
-    extra+=(--app.reset-on-startup=true)
-  fi
-  nohup java "-Xmx$heap" -jar "$jar" --server.port="$port" ${extra[@]+"${extra[@]}"} \
+  nohup java "-Xmx$heap" -jar "$jar" --server.port="$port" \
       >"$RUN_DIR/logs/$name.log" 2>&1 &
   echo $! >"$RUN_DIR/$name.pid"
 }
 
+if ! nc -z localhost 9092 2>/dev/null; then
+  echo "ERROR: Kafka is not reachable on localhost:9092. Run ./kafka-up.sh first." >&2
+  exit 1
+fi
+
 echo "Starting services..."
 
-# 1. admin-service alone, so the schema is migrated before anyone reads it.
+# 1. catalog-service alone: the others load their catalog replicas from it.
 read -r name dir port heap <<<"${SERVICES[0]}"
 start "$name" "$dir" "$port" "$heap"
 wait_healthy "$name" "$port"
 
-# 2. The four other domain services, in parallel.
+# 2. The other domain services and admin, in parallel. Each migrates its own
+#    database on startup.
 for entry in "${SERVICES[@]:1:4}"; do
   read -r name dir port heap <<<"$entry"
   start "$name" "$dir" "$port" "$heap"
@@ -69,5 +74,9 @@ done
 read -r name dir port heap <<<"${SERVICES[5]}"
 start "$name" "$dir" "$port" "$heap"
 wait_healthy "$name" "$port"
+
+if [ "${RESET_ON_STARTUP:-true}" = "true" ]; then
+  ./reset-db.sh
+fi
 
 echo "All services up. Entry point: http://localhost:8080   Logs: $RUN_DIR/logs/"

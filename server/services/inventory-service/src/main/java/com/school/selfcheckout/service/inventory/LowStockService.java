@@ -2,8 +2,6 @@ package com.school.selfcheckout.service.inventory;
 
 import com.school.selfcheckout.contract.Dtos.LowStockAlert;
 import com.school.selfcheckout.contract.Dtos.LowStockResponse;
-import com.school.selfcheckout.data.inventory.InventoryRepository;
-import com.school.selfcheckout.data.inventory.LowStockRow;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -13,11 +11,8 @@ import java.util.List;
 /**
  * Low-stock reporting -- the read side of inventory.
  *
- * The write side (decrements, alerts, shortfalls) runs inside checkout-service,
- * because it must commit atomically with completing the transaction. Both sides
- * use the same inventory-data library: this is the coupling-at-the-data-layer
- * a service-based architecture accepts, in place of one service calling the
- * other.
+ * The write side (decrements, alerts, shortfalls) is {@link StockCommitService}.
+ * Both now live in this service, next to the only database that holds stock.
  */
 @Service
 public class LowStockService {

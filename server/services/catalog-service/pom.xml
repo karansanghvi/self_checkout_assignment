@@ -12,7 +12,7 @@
   </parent>
 
   <artifactId>catalog-service</artifactId>
-  <description>GET /items</description>
+  <description>GET /items, and owner of catalog_db</description>
 
   <dependencies>
     <dependency>
@@ -20,8 +20,16 @@
       <artifactId>common</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.school</groupId>
-      <artifactId>catalog-data</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

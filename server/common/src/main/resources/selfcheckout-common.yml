@@ -2,21 +2,13 @@
 #
 # Each service pulls this in with
 #     spring.config.import: classpath:selfcheckout-common.yml
-# and then sets only what is its own: name, port, pool size. Keep the two
-# sets of keys disjoint -- an imported file overrides the one importing it, so
-# a service cannot override anything defined here. All five services
-# point at the same database -- that single shared database is the defining
-# constraint of a service-based architecture.
+# and then sets only what is its own: name, port, database, pool size. Keep
+# the two sets of keys disjoint -- an imported file overrides the one
+# importing it, so a service cannot override anything defined here. That is
+# why there is no datasource here any more: in week 4 all five services
+# pointed at one database from this file; now each names its own.
 
 spring:
-  datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:self_checkout}
-    username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD}
-    hikari:
-      minimum-idle: 2
-      connection-timeout: 10000
-
   jackson:
     serialization:
       write-dates-as-timestamps: false
@@ -28,11 +20,6 @@ management:
     web:
       exposure:
         include: health
-
-app:
-  # Shared by checkout (which records the crossing) and inventory (which
-  # reports against it), so it lives here rather than in either service.
-  low-stock-threshold: 50
 
 logging:
   level:

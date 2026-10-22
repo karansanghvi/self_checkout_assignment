@@ -1,6 +1,6 @@
 package com.school.selfcheckout.service.analytics.pipeline;
 
-import com.school.selfcheckout.data.analytics.PopularityRepository;
+import com.school.selfcheckout.service.analytics.PopularityRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
  * Wires the windowed-analytics pipeline and owns its threads:
  *
  * <pre>
- *   scan_events --ScanFeed--> scanPipe --> window --windowPipe--> rank --rankedPipe--> persist --> Postgres
+ *   Kafka --ScanConsumer--> scanPipe --> window --windowPipe--> rank --rankedPipe--> persist --> Postgres
  * </pre>
  *
  * <ul>
@@ -28,9 +28,9 @@ import java.util.concurrent.TimeUnit;
  *
  * Each filter runs on its own thread; the pipes are bounded
  * {@link java.util.concurrent.ArrayBlockingQueue}s. The scan pipe is deep and
- * blocks its one producer, {@link com.school.selfcheckout.service.analytics.ScanFeed},
+ * blocks its one producer, {@link com.school.selfcheckout.service.analytics.ScanConsumer},
  * when full -- in this service no request thread ever feeds the pipeline, so
- * there is no checkout latency to protect, and the {@code scan_events} table
+ * there is no checkout latency to protect, and the Kafka topic
  * holds any backlog. The snapshot pipes are shallow and drop the oldest
  * snapshot when full, since a newer snapshot supersedes it.
  */
