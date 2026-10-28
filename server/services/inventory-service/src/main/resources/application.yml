@@ -6,13 +6,15 @@ spring:
 
   # inventory_db is this service's alone; no other service has credentials for it.
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${INVENTORY_DB_NAME:inventory_db}
+    # reWriteBatchedInserts: the audit rows of a whole batch of completions
+    # go to Postgres as a few multi-row INSERTs rather than one per row.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${INVENTORY_DB_NAME:inventory_db}?reWriteBatchedInserts=true
     username: ${INVENTORY_DB_USER:inventory_svc}
     password: ${SERVICE_DB_PASSWORD}
     hikari:
-      # Every completing basket's decrements now run here, so this pool
-      # carries what checkout-service's did for /complete in week 4.
-      maximum-pool-size: ${DB_POOL_SIZE:16}
+      # Stock is written by one consumer thread, in batches; the rest of the
+      # pool serves GET /inventory/low-stock.
+      maximum-pool-size: ${DB_POOL_SIZE:4}
       minimum-idle: 2
       connection-timeout: 10000
       pool-name: inventory-service-pool
@@ -25,4 +27,5 @@ server:
 
 app:
   low-stock-threshold: 50
-  catalog-url: ${CATALOG_URL:http://localhost:8081}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}

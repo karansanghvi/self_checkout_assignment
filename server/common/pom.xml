@@ -12,7 +12,7 @@
   </parent>
 
   <artifactId>common</artifactId>
-  <description>Wire contract (public and internal), business errors, the shared HTTP error mapping, and the HTTP helpers services use to call each other. No database access.</description>
+  <description>Wire contract (the public HTTP API and the Kafka events), business errors, the shared HTTP error mapping, and the Kafka plumbing every service uses to publish and consume events. No database access.</description>
 
   <dependencies>
     <dependency>
@@ -22,6 +22,22 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <!--
+      Plain client, not spring-kafka: every consumer here is one thread
+      reading one or two partitions it assigns itself, with its position kept
+      in its own database. A listener container would hide exactly the parts
+      that make delivery exact.
+    -->
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>

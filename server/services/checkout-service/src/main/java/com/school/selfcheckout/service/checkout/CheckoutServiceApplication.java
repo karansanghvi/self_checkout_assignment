@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Checkout service: the transaction lifecycle, and orchestrator of the completion saga.
+ * Checkout service: the transaction lifecycle, and publisher of the scan and completion events.
  *
  * Scans all of {@code com.school.selfcheckout} so it picks up the shared
  * error handler from the common library. No other service's classes are on

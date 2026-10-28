@@ -2,9 +2,10 @@
 # The deployable units, in start order, with their ports and heap sizes.
 # Sourced by build-all.sh, run-all.sh, stop-all.sh and create-db.sh.
 #
-# catalog-service starts first because the others replicate its catalog;
-# admin-service comes after every service it resets; the gateway comes last
-# so the load client cannot reach it before its routes work.
+# Services only talk through Kafka, so none needs another to be up in order
+# to start. catalog-service still goes first so its startup snapshot is on
+# the topic before the others read it; the gateway comes last so the load
+# client cannot reach it before its routes work.
 
 SERVICES=(
   # name               module dir                     port  heap

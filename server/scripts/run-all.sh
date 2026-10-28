@@ -54,7 +54,8 @@ fi
 
 echo "Starting services..."
 
-# 1. catalog-service alone: the others load their catalog replicas from it.
+# 1. catalog-service alone, so its startup catalog snapshot is on the topic
+#    before the others read their replicas from it.
 read -r name dir port heap <<<"${SERVICES[0]}"
 start "$name" "$dir" "$port" "$heap"
 wait_healthy "$name" "$port"

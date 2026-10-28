@@ -13,16 +13,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Tails the outbox ({@code scan_events}) and publishes each scan, in seq
- * order, to Kafka -- the second half of the transactional-outbox pattern.
+ * Tails the outbox and publishes each event, in seq order, to the Kafka topic
+ * it names -- the second half of the transactional-outbox pattern.
  *
- * In week 4 analytics-service polled this table itself, through the shared
- * database. It cannot reach checkout_db any more, so checkout publishes
- * instead, and the two services share only a topic.
+ * Two kinds of event go through it: {@code ScanRecorded} (to analytics) and,
+ * since week 6, {@code TransactionCompleted} (to inventory). One table and one
+ * relay means one ordering mechanism and one set of failure cases for both.
  *
  * <b>Delivery.</b> At least once. The relay's position is saved to
  * {@code relay_state} only after Kafka has acknowledged the batch, so a crash
- * in between republishes it; analytics drops the repeated seqs.
+ * in between republishes it; analytics drops the repeated seqs, and inventory
+ * applies each transaction at most once.
  *
  * <b>Gaps.</b> A BIGSERIAL hands out numbers at insert time, but concurrent
  * inserts can commit out of order, so seq 101 may be visible before seq 100.
@@ -46,7 +47,7 @@ public class OutboxRelay implements Runnable {
     static final long GAP_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(1);
 
     private final OutboxRepository outbox;
-    private final ScanPublisher publisher;
+    private final OutboxPublisher publisher;
     private final long gapTimeoutNanos;
     private final Object lock = new Object();
 
@@ -60,11 +61,11 @@ public class OutboxRelay implements Runnable {
     private Thread thread;
 
     @Autowired
-    public OutboxRelay(OutboxRepository outbox, ScanPublisher publisher) {
+    public OutboxRelay(OutboxRepository outbox, OutboxPublisher publisher) {
         this(outbox, publisher, GAP_TIMEOUT_NANOS);
     }
 
-    OutboxRelay(OutboxRepository outbox, ScanPublisher publisher, long gapTimeoutNanos) {
+    OutboxRelay(OutboxRepository outbox, OutboxPublisher publisher, long gapTimeoutNanos) {
         this.outbox = outbox;
         this.publisher = publisher;
         this.gapTimeoutNanos = gapTimeoutNanos;
@@ -125,11 +126,7 @@ public class OutboxRelay implements Runnable {
      */
     boolean publishOnce() {
         synchronized (lock) {
-            if (epoch < 0) {
-                RelayState state = outbox.loadState();
-                epoch = state.epoch();
-                lastSeq = state.publishedSeq();
-            }
+            epoch();
 
             List<OutboxEvent> batch = outbox.poll(lastSeq, BATCH_SIZE);
             int ready = 0;
@@ -174,6 +171,18 @@ public class OutboxRelay implements Runnable {
             epoch = newEpoch;
             lastSeq = 0;
             gapSeenAt = 0;
+        }
+    }
+
+    /** The epoch the relay, and so checkout_db, is in. */
+    public long epoch() {
+        synchronized (lock) {
+            if (epoch < 0) {
+                RelayState state = outbox.loadState();
+                epoch = state.epoch();
+                lastSeq = state.publishedSeq();
+            }
+            return epoch;
         }
     }
 

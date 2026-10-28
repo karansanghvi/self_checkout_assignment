@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Inventory service: stock -- the commit step of the completion saga, and low-stock reporting.
+ * Inventory service: stock -- applying completed transactions from Kafka, and low-stock reporting.
  *
  * Scans all of {@code com.school.selfcheckout} so it picks up the shared
  * error handler from the common library. No other service's classes are on

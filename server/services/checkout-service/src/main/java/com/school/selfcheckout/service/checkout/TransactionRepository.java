@@ -1,13 +1,14 @@
 package com.school.selfcheckout.service.checkout;
 
+import com.school.selfcheckout.messaging.Topic;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -71,8 +72,8 @@ public class TransactionRepository {
      *
      *   1. bump the denormalized counters on the transaction row,
      *   2. upsert the per-SKU basket line,
-     *   3. append the scan to {@code scan_events}, this service's outbox,
-     *      which {@link OutboxRelay} publishes to Kafka for analytics-service.
+     *   3. append a {@code ScanRecorded} event to the outbox, which
+     *      {@link OutboxRelay} publishes to Kafka for analytics-service.
      *
      * The transaction UPDATE is the guard: both inserts select {@code FROM tx},
      * so if the transaction is missing or no longer OPEN, tx is empty and
@@ -89,7 +90,7 @@ public class TransactionRepository {
      *
      * No locking is needed. A transaction row is only ever touched by the one
      * station that owns it, so there is no contention to protect against --
-     * unlike the inventory rows, which every station fights over.
+     * unlike the inventory rows, which every completion updates.
      *
      * @return the new {@code (itemCount, runningTotal)}, or {@code null} if the
      *         transaction was missing or not OPEN.
@@ -111,95 +112,78 @@ public class TransactionRepository {
                     DO UPDATE SET quantity = transaction_items.quantity + 1
                 ),
                 event AS (
-                    INSERT INTO scan_events (sku)
-                    SELECT CAST(? AS text) FROM tx
+                    INSERT INTO outbox (topic, event_type, payload)
+                    SELECT CAST(? AS text), 'ScanRecorded', json_build_object('sku', CAST(? AS text))::text
+                      FROM tx
                 )
                 SELECT item_count, running_total FROM tx
                 """,
                 (rs, rowNum) -> new ScanTotals(rs.getInt("item_count"), rs.getBigDecimal("running_total")),
-                unitPrice, transactionId, sku, unitPrice, sku);
+                unitPrice, transactionId, sku, unitPrice, Topic.SCAN_EVENTS.topicName(), sku);
         return result.isEmpty() ? null : result.get(0);
     }
 
     /**
-     * Step 1 of the completion saga: atomically claims the transaction,
-     * moving it OPEN -> COMPLETING.
+     * Completes a transaction: OPEN -> COMPLETED, and a
+     * {@code TransactionCompleted} event in the outbox, in one database
+     * transaction. That is all /complete does now. In week 5 this was a
+     * three-step saga with an HTTP call to inventory-service in the middle;
+     * inventory now takes the stock out when it consumes the event.
      *
-     * The {@code AND status = 'OPEN'} predicate is what makes concurrent
-     * double-completion safe: two simultaneous /complete calls both try this
-     * UPDATE, the second blocks on the row lock, then re-evaluates the
-     * predicate against the committed 'COMPLETING' row and matches nothing.
-     * {@code item_count > 0} refuses an empty basket in the same statement.
+     * Two statements, in this order, inside one transaction:
      *
-     * COMPLETING is a durable marker that the saga is in flight. A scan cannot
-     * land on it (recordScan requires OPEN), so the lines inventory is asked
-     * to commit are final.
+     *   1. The claim. {@code AND status = 'OPEN'} makes concurrent
+     *      double-completion safe: the second UPDATE blocks on the row lock,
+     *      then re-evaluates the predicate against the committed COMPLETED
+     *      row and matches nothing. {@code item_count > 0} refuses an empty
+     *      basket in the same statement.
+     *   2. Read the basket lines and write the event from them, in one
+     *      statement so both see the same snapshot. It runs after the claim,
+     *      and so with a snapshot taken after it: every scan committed before
+     *      the claim is included, and no scan can land after it, because
+     *      recordScan requires OPEN. Folding both into one statement would
+     *      read the lines from a snapshot taken <i>before</i> the claim had
+     *      waited for the row lock, and could miss a concurrent last scan.
      *
-     * @return the claimed transaction, or {@code null} if missing, not OPEN, or empty.
+     * @return the completed transaction and its lines, or {@code null} if it
+     *         was missing, not OPEN, or empty
      */
-    public TransactionRow claimForCompletion(UUID id) {
-        List<TransactionRow> rows = jdbc.query(
-                "UPDATE transactions SET status = 'COMPLETING', completing_since = now() "
+    @Transactional
+    public Completion complete(UUID id) {
+        List<TransactionRow> claimed = jdbc.query(
+                "UPDATE transactions SET status = 'COMPLETED', completed_at = now() "
                         + "WHERE id = ? AND status = 'OPEN' AND item_count > 0 "
                         + "RETURNING id, station_id, status, item_count, running_total, started_at, completed_at",
                 TX_MAPPER, id);
-        return rows.isEmpty() ? null : rows.get(0);
+        if (claimed.isEmpty()) {
+            return null;
+        }
+        TransactionRow tx = claimed.get(0);
+
+        List<TransactionLine> lines = jdbc.query(
+                """
+                WITH lines AS (
+                    SELECT sku, quantity, unit_price FROM transaction_items WHERE transaction_id = ?
+                ),
+                event AS (
+                    INSERT INTO outbox (topic, event_type, msg_key, payload)
+                    SELECT CAST(? AS text), 'TransactionCompleted', CAST(? AS text),
+                           json_build_object(
+                               'transactionId', CAST(? AS text),
+                               'stationId',     CAST(? AS text),
+                               'lines', json_agg(json_build_object('sku', sku, 'quantity', quantity) ORDER BY sku)
+                           )::text
+                      FROM lines
+                )
+                SELECT sku, quantity, unit_price FROM lines ORDER BY sku
+                """,
+                LINE_MAPPER, id, Topic.TRANSACTION_COMPLETED.topicName(), id.toString(), id.toString(),
+                tx.stationId());
+        return new Completion(tx, lines);
     }
 
-    /**
-     * Step 3 of the saga, after inventory has committed the stock:
-     * COMPLETING -> COMPLETED.
-     *
-     * @return the completed transaction, or {@code null} if it was not
-     *         COMPLETING -- in practice, another attempt finished it first.
-     */
-    public TransactionRow markCompleted(UUID id) {
-        List<TransactionRow> rows = jdbc.query(
-                "UPDATE transactions SET status = 'COMPLETED', completed_at = now() "
-                        + "WHERE id = ? AND status = 'COMPLETING' "
-                        + "RETURNING id, station_id, status, item_count, running_total, started_at, completed_at",
-                TX_MAPPER, id);
-        return rows.isEmpty() ? null : rows.get(0);
-    }
-
-    /**
-     * The saga's compensating step: COMPLETING -> OPEN, for when inventory
-     * definitively refused the commit, so the station can fix the basket.
-     */
-    public boolean revertToOpen(UUID id) {
-        return jdbc.update(
-                "UPDATE transactions SET status = 'OPEN', completing_since = NULL "
-                        + "WHERE id = ? AND status = 'COMPLETING'",
-                id) == 1;
-    }
-
-    /** Sagas that have sat in COMPLETING for longer than {@code olderThan}, oldest first. */
-    public List<TransactionRow> findStuckCompleting(Duration olderThan, int limit) {
-        return jdbc.query(
-                "SELECT id, station_id, status, item_count, running_total, started_at, completed_at "
-                        + "FROM transactions "
-                        + "WHERE status = 'COMPLETING' AND completing_since < now() - make_interval(secs => ?) "
-                        + "ORDER BY completing_since LIMIT ?",
-                TX_MAPPER, (double) olderThan.toMillis() / 1000.0, limit);
-    }
-
-    /** Wipes all run state, outbox included. Part of a reset; see CheckoutResetService. */
+    /** Wipes all run state, outbox included. Part of a reset; see OutboxRelay#reset. */
     public void truncateAll() {
-        jdbc.execute("TRUNCATE transaction_items, transactions, scan_events RESTART IDENTITY CASCADE");
-    }
-
-    /**
-     * Basket lines, ordered by SKU.
-     *
-     * In week 4 this ordering was checkout's deadlock-avoidance mechanism,
-     * because checkout took the inventory row locks. inventory-service takes
-     * them now and enforces the order itself; sorting here just keeps the
-     * receipt lines in the same order as before.
-     */
-    public List<TransactionLine> findLinesOrderedBySku(UUID transactionId) {
-        return jdbc.query(
-                "SELECT sku, quantity, unit_price FROM transaction_items "
-                        + "WHERE transaction_id = ? ORDER BY sku",
-                LINE_MAPPER, transactionId);
+        jdbc.execute("TRUNCATE transaction_items, transactions, outbox RESTART IDENTITY CASCADE");
     }
 }

@@ -3,26 +3,24 @@ package com.school.selfcheckout.service.checkout;
 import com.school.selfcheckout.client.CatalogReplica;
 import com.school.selfcheckout.contract.Dtos.CatalogItem;
 import com.school.selfcheckout.contract.Dtos.Receipt;
+import com.school.selfcheckout.contract.Dtos.ReceiptLine;
 import com.school.selfcheckout.contract.Dtos.ScanResult;
 import com.school.selfcheckout.contract.Dtos.TransactionResponse;
 import com.school.selfcheckout.domain.CheckoutException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
-    private final CompletionSaga completionSaga;
     private final CatalogReplica catalog;
 
-    public TransactionService(TransactionRepository transactionRepository,
-                              CompletionSaga completionSaga,
-                              CatalogReplica catalog) {
+    public TransactionService(TransactionRepository transactionRepository, CatalogReplica catalog) {
         this.transactionRepository = transactionRepository;
-        this.completionSaga = completionSaga;
         this.catalog = catalog;
     }
 
@@ -41,7 +39,7 @@ public class TransactionService {
         return new TransactionResponse(
                 row.id().toString(),
                 row.stationId(),
-                wireStatus(row.status()),
+                row.status(),
                 row.itemCount(),
                 row.runningTotal(),
                 row.startedAt());
@@ -74,50 +72,67 @@ public class TransactionService {
     }
 
     /**
-     * Completes the transaction: step 1 of the saga here, the rest in
-     * {@link CompletionSaga}.
+     * Completes the transaction and returns the receipt.
      *
-     * A transaction already in COMPLETING is an earlier completion that did
-     * not finish -- typically inventory-service was unreachable and the
-     * client got a 503. Calling /complete again resumes that saga rather
-     * than refusing it. Inventory's idempotency makes this safe even if the
-     * earlier attempt did reach it.
+     * One local database transaction, with no call to any other service: the
+     * sale and its {@code TransactionCompleted} event are committed together
+     * (see {@link TransactionRepository#complete}), and inventory-service
+     * takes the stock out when it consumes that event. Nothing inventory
+     * could say would change the answer -- under the clamp-and-audit policy
+     * it never refuses a basket, and the receipt holds nothing it owns -- so
+     * there is nothing to wait for.
      */
     public Receipt complete(String transactionId) {
         UUID id = parseId(transactionId);
 
-        TransactionRow claimed = transactionRepository.claimForCompletion(id);
-        if (claimed == null) {
+        Completion completion = transactionRepository.complete(id);
+        if (completion == null) {
             TransactionRow current = transactionRepository.findById(id);
             if (current == null) {
                 throw CheckoutException.transactionNotFound(transactionId);
             }
-            switch (current.status()) {
-                case "COMPLETING" -> claimed = current;
-                case "OPEN" -> {
-                    if (current.itemCount() == 0) {
-                        throw CheckoutException.emptyBasket(transactionId);
-                    }
-                    // A rejected saga reopened it between our two reads; it is fair game again.
-                    claimed = transactionRepository.claimForCompletion(id);
-                    if (claimed == null) {
-                        throw CheckoutException.transactionBeingCompleted(transactionId);
-                    }
-                }
-                default -> throw CheckoutException.transactionNotOpen(transactionId, current.status());
+            if (!"OPEN".equals(current.status())) {
+                throw CheckoutException.transactionNotOpen(transactionId, current.status());
+            }
+            if (current.itemCount() == 0) {
+                throw CheckoutException.emptyBasket(transactionId);
+            }
+            // The basket's first scan committed between the claim and the re-read.
+            completion = transactionRepository.complete(id);
+            if (completion == null) {
+                throw notFoundOrNotOpen(id, transactionId);
             }
         }
+        return receipt(transactionId, completion);
+    }
 
-        return completionSaga.drive(claimed);
+    private Receipt receipt(String transactionId, Completion completion) {
+        TransactionRow tx = completion.transaction();
+        List<ReceiptLine> lines = completion.lines().stream()
+                .map(line -> new ReceiptLine(line.sku(), nameOf(line.sku()), line.unitPrice(), line.quantity()))
+                .toList();
+        return new Receipt(
+                transactionId,
+                tx.stationId(),
+                tx.itemCount(),
+                tx.runningTotal(),
+                tx.startedAt(),
+                tx.completedAt() != null ? tx.completedAt() : Instant.now(),
+                lines);
     }
 
     /**
-     * COMPLETING is internal saga state. The contract's status enum is
-     * OPEN | COMPLETED | CANCELLED, and until the saga finishes the basket
-     * has not been sold, so it is reported as OPEN.
+     * The sale is already committed by the time the receipt is built, so a
+     * missing name must not turn it into an error: if no catalog snapshot has
+     * arrived since a restart, the receipt names the SKU instead.
      */
-    private static String wireStatus(String status) {
-        return "COMPLETING".equals(status) ? "OPEN" : status;
+    private String nameOf(String sku) {
+        try {
+            CatalogItem item = catalog.findBySku(sku);
+            return item != null ? item.name() : sku;
+        } catch (CheckoutException e) {
+            return sku;
+        }
     }
 
     private TransactionRow requireExisting(String transactionId) {
@@ -134,9 +149,7 @@ public class TransactionService {
         if (status == null) {
             return CheckoutException.transactionNotFound(rawId);
         }
-        return "COMPLETING".equals(status)
-                ? CheckoutException.transactionBeingCompleted(rawId)
-                : CheckoutException.transactionNotOpen(rawId, status);
+        return CheckoutException.transactionNotOpen(rawId, status);
     }
 
     /** A malformed id is a 404, not a 500 -- it simply identifies no transaction. */

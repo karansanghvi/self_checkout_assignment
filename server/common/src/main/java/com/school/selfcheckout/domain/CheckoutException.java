@@ -34,12 +34,6 @@ public class CheckoutException extends RuntimeException {
                 "Transaction " + transactionId + " is " + status + ".");
     }
 
-    /** A scan or completion raced a completion that is still in flight. */
-    public static CheckoutException transactionBeingCompleted(String transactionId) {
-        return new CheckoutException(ErrorCode.TRANSACTION_NOT_OPEN,
-                "Transaction " + transactionId + " is being completed.");
-    }
-
     public static CheckoutException emptyBasket(String transactionId) {
         return new CheckoutException(ErrorCode.EMPTY_BASKET,
                 "Cannot complete transaction " + transactionId + " with an empty basket.");

@@ -21,12 +21,11 @@ spring:
 server:
   port: ${SERVER_PORT:8084}
 
+# analytics-service calls no other service. It consumes scan-events and
+# catalog-snapshots, and acknowledges resets on reset-completed.
 app:
-  catalog-url: ${CATALOG_URL:http://localhost:8081}
-
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    scan-topic: scan-events
 
   popularity:
     # Hopping window, per the OpenAPI contract: count the most recent

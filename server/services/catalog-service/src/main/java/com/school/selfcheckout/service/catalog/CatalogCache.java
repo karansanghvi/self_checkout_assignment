@@ -21,9 +21,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * This is catalog-service's own cache of its own table. Other services do not
  * read {@code items} -- they cannot, it is in catalog_db -- but replicate it
- * through {@code GET /items} into a {@code CatalogReplica}. After a reset
- * {@link CatalogResetService} reloads this cache before acknowledging, so by
- * the time those replicas re-fetch, they get the new catalog.
+ * from the snapshots {@link CatalogResetService} publishes to Kafka, which
+ * are built from this cache after it has been reloaded.
  */
 @Component
 public class CatalogCache {

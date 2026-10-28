@@ -12,7 +12,7 @@
   </parent>
 
   <artifactId>admin-service</artifactId>
-  <description>POST /admin/reset: a stateless orchestrator that resets every other service in turn. Owns no database.</description>
+  <description>POST /admin/reset: publishes a reset request and waits for every service to acknowledge it. Owns no database.</description>
 
   <dependencies>
     <dependency>

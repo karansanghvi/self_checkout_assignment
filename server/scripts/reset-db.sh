@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Reset the whole system between load-test runs: every service wipes its own
-# run state and reseeds, under a new epoch, orchestrated by admin-service.
+# run state and reseeds, under a new epoch. admin-service publishes one
+# ResetRequested event and answers once all four services have acknowledged.
 #
 # There is no SQL shortcut any more: the data is spread over four databases
 # owned by four services, and some of them hold in-memory state (catalog

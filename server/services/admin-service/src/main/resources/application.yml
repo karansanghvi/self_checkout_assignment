@@ -7,13 +7,14 @@ spring:
 server:
   port: ${SERVER_PORT:8085}
 
-# admin-service owns no data and has no database. A reset is a fan-out to the
-# services that do; see ResetService for the order and why it matters.
+# admin-service owns no data and has no database. A reset is one event on
+# reset-requested, then a wait for every participant's ack on reset-completed;
+# see ResetService.
 app:
   catalog-size: 2000
   stock-per-item: 10000
-  services:
-    catalog-url: ${CATALOG_URL:http://localhost:8081}
-    inventory-url: ${INVENTORY_URL:http://localhost:8083}
-    analytics-url: ${ANALYTICS_URL:http://localhost:8084}
-    checkout-url: ${CHECKOUT_URL:http://localhost:8082}
+  reset:
+    timeout-ms: 30000
+    participants: catalog-service,inventory-service,checkout-service,analytics-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}

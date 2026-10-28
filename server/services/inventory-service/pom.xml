@@ -12,7 +12,7 @@
   </parent>
 
   <artifactId>inventory-service</artifactId>
-  <description>Stock: the idempotent stock-commit step of the completion saga, GET /inventory/low-stock, and owner of inventory_db</description>
+  <description>Stock: consumes TransactionCompleted events and takes the stock out, serves GET /inventory/low-stock, owns inventory_db</description>
 
   <dependencies>
     <dependency>

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -26,15 +27,16 @@ class OutboxRelayTest {
     private final List<String> published = new ArrayList<>();
     private RuntimeException publishFailure;
 
-    private final ScanPublisher publisher = (epoch, events) -> {
+    private final OutboxPublisher publisher = (epoch, events) -> {
         if (publishFailure != null) {
             throw publishFailure;
         }
-        events.forEach(e -> published.add(epoch + ":" + e.seq() + ":" + e.sku()));
+        events.forEach(e -> published.add(epoch + ":" + e.seq() + ":" + e.key()));
     };
 
-    private static OutboxEvent ev(long seq, String sku) {
-        return new OutboxEvent(seq, sku);
+    /** The key stands in for the payload, to keep the expectations readable. */
+    private static OutboxEvent ev(long seq, String key) {
+        return new OutboxEvent(seq, "scan-events", "ScanRecorded", key, "{}", Instant.EPOCH);
     }
 
     @BeforeEach
@@ -106,6 +108,22 @@ class OutboxRelayTest {
         publishFailure = null;
         relay.publishOnce(); // The whole batch goes again.
         assertThat(published).containsExactly("7:1:A");
+    }
+
+    @Test
+    void eventsForDifferentTopicsShareOneSequence() {
+        List<OutboxEvent> sent = new ArrayList<>();
+        OutboxRelay recording = new OutboxRelay(outbox, (epoch, events) -> sent.addAll(events));
+        when(outbox.poll(eq(0L), anyInt())).thenReturn(List.of(
+                ev(1, "A"),
+                new OutboxEvent(2, "transaction-completed", "TransactionCompleted", "tx-1", "{}", Instant.EPOCH),
+                ev(3, "B")));
+
+        recording.publishOnce();
+
+        assertThat(sent).extracting(OutboxEvent::topic)
+                .containsExactly("scan-events", "transaction-completed", "scan-events");
+        assertThat(recording.epoch()).isEqualTo(7);
     }
 
     @Test

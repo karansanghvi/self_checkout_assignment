@@ -1,4 +1,5 @@
-# Message broker for the scan feed (checkout-service outbox -> analytics-service).
+# The event broker: every interaction between services is a Kafka event
+# (see scripts/kafka-up.sh for the topics and who uses them).
 #
 # Single-node Kafka in KRaft mode: no ZooKeeper, one container acting as both
 # broker and controller. That is enough for a single-machine load test; the

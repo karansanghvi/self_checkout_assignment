@@ -16,18 +16,19 @@
   <version>1.0.0</version>
   <packaging>pom</packaging>
   <name>self-checkout</name>
-  <description>Microservices implementation of the self-checkout API contract</description>
+  <description>Event-driven microservices implementation of the self-checkout API contract</description>
 
   <!--
     Module graph:
 
-      services/*  ──►  common          (wire contract, errors, HTTP helpers)
+      services/*  ──►  common          (wire contract, events, errors, Kafka plumbing)
       services/*  ──►  their OWN database, never another service's
 
     No service module depends on another service module or on any shared
-    data library (there are none). Services reach each other only over HTTP
-    (the stock-commit saga, the catalog replica, the reset fan-out) or through
-    Kafka (the scan feed).
+    data library (there are none). Services reach each other only through
+    Kafka: scans, completed transactions, catalog snapshots, and the reset
+    request and its acknowledgements are all events. No service makes an
+    HTTP call to another.
   -->
   <modules>
     <module>common</module>

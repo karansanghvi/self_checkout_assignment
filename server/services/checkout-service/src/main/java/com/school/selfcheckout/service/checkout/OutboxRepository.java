@@ -7,7 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * The outbox ({@code scan_events}) and the relay's position in it
+ * The outbox ({@code outbox}) and the relay's position in it
  * ({@code relay_state}), both in checkout_db.
  */
 @Repository
@@ -24,8 +24,15 @@ public class OutboxRepository {
     /** Up to {@code limit} events with {@code seq > afterSeq}, in seq order. */
     public List<OutboxEvent> poll(long afterSeq, int limit) {
         return jdbc.query(
-                "SELECT seq, sku FROM scan_events WHERE seq > ? ORDER BY seq LIMIT ?",
-                (rs, rowNum) -> new OutboxEvent(rs.getLong("seq"), rs.getString("sku")),
+                "SELECT seq, topic, event_type, msg_key, payload, created_at FROM outbox "
+                        + "WHERE seq > ? ORDER BY seq LIMIT ?",
+                (rs, rowNum) -> new OutboxEvent(
+                        rs.getLong("seq"),
+                        rs.getString("topic"),
+                        rs.getString("event_type"),
+                        rs.getString("msg_key"),
+                        rs.getString("payload"),
+                        rs.getTimestamp("created_at").toInstant()),
                 afterSeq, limit);
     }
 

@@ -21,23 +21,8 @@ spring:
 server:
   port: ${SERVER_PORT:8082}
 
+# checkout-service calls no other service. It publishes scans and
+# completions through its outbox, and follows the catalog-snapshots topic.
 app:
-  catalog-url: ${CATALOG_URL:http://localhost:8081}
-
-  # Step 2 of the completion saga. Worst case per request:
-  # 3 attempts x 3s read timeout + 100ms + 200ms backoff, comfortably under
-  # recovery.stale-after-ms, so the sweeper never races a live request.
-  inventory:
-    url: ${INVENTORY_URL:http://localhost:8083}
-    connect-timeout-ms: 1000
-    read-timeout-ms: 3000
-    max-attempts: 3
-    backoff-ms: 100
-
-  recovery:
-    interval-ms: 5000
-    stale-after-ms: 15000
-
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    scan-topic: scan-events

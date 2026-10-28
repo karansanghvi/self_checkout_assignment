@@ -1,5 +1,7 @@
 package com.school.selfcheckout.service.analytics;
 
+import com.school.selfcheckout.contract.Events.ScanRecorded;
+import com.school.selfcheckout.messaging.EventCodec;
 import com.school.selfcheckout.service.analytics.pipeline.PopularityPipeline;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -21,7 +24,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Drives {@link ScanConsumer#pollOnce()} against Kafka's own in-memory MockConsumer. */
+/** Drives {@link ScanConsumer#step()} against Kafka's own in-memory MockConsumer. */
 class ScanConsumerTest {
 
     private static final String TOPIC = "scan-events";
@@ -33,7 +36,14 @@ class ScanConsumerTest {
     private ScanConsumer consumer;
     private long nextOffset = 0;
 
-    private void publish(String value) {
+    /** Publishes {@code epoch:seq:sku} as the envelope checkout's relay would send. */
+    private void publish(String spec) {
+        String[] parts = spec.split(":", 3);
+        publishRaw(EventCodec.encode(Long.parseLong(parts[0]), Long.parseLong(parts[1]), Instant.EPOCH,
+                new ScanRecorded(parts[2])));
+    }
+
+    private void publishRaw(String value) {
         kafka.addRecord(new ConsumerRecord<>(TOPIC, 0, nextOffset++, null, value));
         kafka.updateEndOffsets(Map.of(TP, nextOffset));
     }
@@ -43,17 +53,17 @@ class ScanConsumerTest {
         kafka.updateBeginningOffsets(Map.of(TP, 0L));
         kafka.updateEndOffsets(Map.of(TP, 0L));
         when(repository.loadState()).thenReturn(new AnalyticsState(5, 0));
-        consumer = new ScanConsumer(kafka, repository, pipeline, TOPIC);
+        consumer = new ScanConsumer(kafka, repository, pipeline);
     }
 
     @Test
     void firstPollStartsTheStoredEpochThenFeedsInOrder() {
-        consumer.pollOnce();
+        consumer.step();
         verify(pipeline).reset(5);
 
         publish("5:1:A");
         publish("5:2:B");
-        consumer.pollOnce();
+        consumer.step();
 
         InOrder order = inOrder(pipeline);
         order.verify(pipeline).submit("A");
@@ -63,13 +73,13 @@ class ScanConsumerTest {
 
     @Test
     void redeliveredSeqsAreDropped() {
-        consumer.pollOnce();
+        consumer.step();
         publish("5:1:A");
         publish("5:2:B");
         publish("5:1:A"); // the relay crashed after publishing, before saving its position
         publish("5:2:B");
         publish("5:3:C");
-        consumer.pollOnce();
+        consumer.step();
 
         verify(pipeline, org.mockito.Mockito.times(1)).submit("A");
         verify(pipeline).submit("C");
@@ -79,10 +89,10 @@ class ScanConsumerTest {
 
     @Test
     void eventsFromAnEarlierEpochAreSkipped() {
-        consumer.pollOnce();
+        consumer.step();
         publish("4:900:OLD");
         publish("5:1:NEW");
-        consumer.pollOnce();
+        consumer.step();
 
         verify(pipeline, never()).submit("OLD");
         verify(pipeline).submit("NEW");
@@ -90,17 +100,17 @@ class ScanConsumerTest {
     }
 
     @Test
-    void aResetStartsTheNewEpochAtTheEndOfTheTopic() throws Exception {
-        consumer.pollOnce();
+    void aResetStartsTheNewEpochAtTheCurrentPosition() throws Exception {
+        consumer.step();
         publish("5:1:A");
         publish("5:2:B");
-        consumer.pollOnce();
+        consumer.step();
 
         CompletableFuture<Void> reset = CompletableFuture.runAsync(() -> consumer.reset(6));
-        // The HTTP thread only queues the reset; the consumer thread applies it.
+        // The catalog feed's thread only queues the reset; the consumer thread applies it.
         while (!reset.isDone()) {
             try {
-                consumer.pollOnce();
+                consumer.step();
             } catch (org.apache.kafka.common.errors.WakeupException ignored) {
                 // reset() woke the consumer; poll again to apply it.
             }
@@ -110,7 +120,7 @@ class ScanConsumerTest {
 
         publish("5:3:LATE"); // relay still on the old epoch when analytics reset
         publish("6:1:NEW");
-        consumer.pollOnce();
+        consumer.step();
 
         verify(pipeline, never()).submit("LATE");
         verify(pipeline).submit("NEW");
@@ -119,9 +129,9 @@ class ScanConsumerTest {
 
     @Test
     void anEpochItNeverHeardAboutIsAdopted() {
-        consumer.pollOnce();
+        consumer.step();
         publish("7:1:X");
-        consumer.pollOnce();
+        consumer.step();
 
         verify(repository).resetTo(7, 0);
         verify(pipeline).reset(7);
@@ -129,10 +139,32 @@ class ScanConsumerTest {
     }
 
     @Test
+    void aResetForAnEpochAlreadyAdoptedFromTheStreamIsANoOp() throws Exception {
+        consumer.step();
+        publish("6:1:X"); // checkout reset first; analytics adopts epoch 6 from the stream
+        consumer.step();
+
+        CompletableFuture<Void> reset = CompletableFuture.runAsync(() -> consumer.reset(6));
+        while (!reset.isDone()) {
+            try {
+                consumer.step();
+            } catch (org.apache.kafka.common.errors.WakeupException ignored) {
+                // reset() woke the consumer; poll again to apply it.
+            }
+        }
+        reset.get(1, TimeUnit.SECONDS);
+
+        verify(repository, org.mockito.Mockito.times(1)).resetTo(org.mockito.ArgumentMatchers.eq(6L),
+                org.mockito.ArgumentMatchers.anyLong());
+        assertThat(consumer.lastSeq()).isEqualTo(1);
+    }
+
+    @Test
     void malformedRecordsAreIgnored() {
-        consumer.pollOnce();
-        publish("garbage");
-        consumer.pollOnce();
+        consumer.step();
+        publishRaw("garbage");
+        publishRaw(EventCodec.encode(5, 1, Instant.EPOCH, new com.school.selfcheckout.contract.Events.ResetRequested(1, 1)));
+        consumer.step();
 
         verify(pipeline, never()).submit(anyString());
     }

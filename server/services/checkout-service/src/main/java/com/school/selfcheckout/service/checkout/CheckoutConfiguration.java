@@ -1,57 +1,78 @@
 package com.school.selfcheckout.service.checkout;
 
 import com.school.selfcheckout.client.CatalogReplica;
-import org.apache.kafka.clients.producer.KafkaProducer;
+import com.school.selfcheckout.contract.Events.CatalogSnapshot;
+import com.school.selfcheckout.messaging.CatalogFeed;
+import com.school.selfcheckout.messaging.EventPublisher;
+import com.school.selfcheckout.messaging.KafkaClients;
+import com.school.selfcheckout.messaging.ResetAcknowledger;
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
-import java.util.Map;
-
+/**
+ * checkout-service on Kafka. It produces to {@code scan-events} and
+ * {@code transaction-completed} (through the outbox) and to
+ * {@code reset-completed}, and consumes {@code catalog-snapshots}. It makes
+ * no HTTP call to any other service.
+ */
 @Configuration
-@EnableScheduling
 public class CheckoutConfiguration {
 
-    /** Prices and names for scans and receipts, replicated from catalog-service. */
+    /** Prices and names for scans and receipts, replicated from the catalog-snapshots topic. */
     @Bean
-    public CatalogReplica catalogReplica(@Value("${app.catalog-url}") String catalogUrl) {
-        return new CatalogReplica(catalogUrl);
+    public CatalogReplica catalogReplica() {
+        return new CatalogReplica();
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void warmUpCatalog(ApplicationReadyEvent event) {
-        event.getApplicationContext().getBean(CatalogReplica.class).warmUpInBackground();
+    /** One producer for everything checkout sends; KafkaProducer is thread-safe. */
+    @Bean(destroyMethod = "close")
+    public Producer<String, String> checkoutProducer(@Value("${app.kafka.bootstrap-servers}") String bootstrap) {
+        return KafkaClients.producer(bootstrap, "checkout-service");
+    }
+
+    @Bean
+    public OutboxPublisher outboxPublisher(Producer<String, String> checkoutProducer) {
+        return new KafkaOutboxPublisher(checkoutProducer);
+    }
+
+    @Bean
+    public ResetAcknowledger resetAcknowledger(Producer<String, String> checkoutProducer) {
+        return new ResetAcknowledger(new EventPublisher(checkoutProducer), "checkout-service");
+    }
+
+    @Bean(destroyMethod = "close")
+    public Consumer<String, String> catalogSnapshotConsumer(@Value("${app.kafka.bootstrap-servers}") String bootstrap) {
+        return KafkaClients.consumer(bootstrap, "checkout-catalog-feed", 10);
     }
 
     /**
-     * Idempotent, fully-acknowledged producer: {@code acks=all} plus
-     * idempotence means a retried send is neither lost nor duplicated by the
-     * producer, and with at most 5 requests in flight it also keeps order.
+     * On a snapshot from a newer epoch: empty checkout_db and move the outbox
+     * relay to that epoch. The relay's lock means no batch from the old run
+     * can be published under the new epoch.
      */
-    @Bean(destroyMethod = "close")
-    public Producer<String, String> scanProducer(@Value("${app.kafka.bootstrap-servers}") String bootstrap) {
-        return new KafkaProducer<>(Map.of(
-                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap,
-                ProducerConfig.CLIENT_ID_CONFIG, "checkout-outbox-relay",
-                ProducerConfig.ACKS_CONFIG, "all",
-                ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true,
-                ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5,
-                ProducerConfig.LINGER_MS_CONFIG, 5,
-                ProducerConfig.MAX_BLOCK_MS_CONFIG, 5_000,
-                ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10_000,
-                ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 15_000),
-                new StringSerializer(), new StringSerializer());
+    @Bean(destroyMethod = "stop")
+    public CatalogFeed catalogFeed(Consumer<String, String> catalogSnapshotConsumer, CatalogReplica catalogReplica,
+                                   OutboxRelay relay, ResetAcknowledger resetAcknowledger) {
+        return new CatalogFeed(catalogSnapshotConsumer, catalogReplica, new CatalogFeed.ResetParticipant() {
+            @Override
+            public long currentEpoch() {
+                return relay.epoch();
+            }
+
+            @Override
+            public void resetTo(long epoch, CatalogSnapshot snapshot) {
+                relay.reset(epoch);
+            }
+        }, resetAcknowledger);
     }
 
-    @Bean
-    public ScanPublisher scanPublisher(Producer<String, String> scanProducer,
-                                       @Value("${app.kafka.scan-topic}") String topic) {
-        return new KafkaScanPublisher(scanProducer, topic);
+    @EventListener(ApplicationReadyEvent.class)
+    public void startCatalogFeed(ApplicationReadyEvent event) {
+        event.getApplicationContext().getBean(CatalogFeed.class).start();
     }
 }

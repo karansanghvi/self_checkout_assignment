@@ -2,8 +2,8 @@ package com.school.selfcheckout.service.checkout;
 
 import java.util.List;
 
-/** Where the outbox relay sends scans. {@link KafkaScanPublisher} in production, a fake in tests. */
-public interface ScanPublisher {
+/** Where the outbox relay sends events. {@link KafkaOutboxPublisher} in production, a fake in tests. */
+public interface OutboxPublisher {
 
     /**
      * Publishes the events in order and returns only once the broker has

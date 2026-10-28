@@ -33,10 +33,11 @@ public class ItemRepository {
      * Makes the catalog exactly {@code catalogSize} items, using the same
      * generator as the reference MockServer (and V2__seed_catalog.sql).
      * Items outside the requested size are dropped, so shrinking works as
-     * well as growing.
+     * well as growing. Records the reset's epoch in the same transaction.
      */
     @Transactional
-    public void reseed(int catalogSize) {
+    public void reseed(long epoch, int catalogSize, int stockPerItem) {
+        jdbc.update("UPDATE catalog_state SET epoch = ?, stock_per_item = ? WHERE id = 1", epoch, stockPerItem);
         jdbc.update(
                 "DELETE FROM items WHERE sku NOT IN "
                         + "(SELECT 'SKU-' || LPAD(i::text, 6, '0') FROM generate_series(1, ?) AS i)",
@@ -49,5 +50,11 @@ public class ItemRepository {
                   FROM generate_series(1, ?) AS i
                 ON CONFLICT (sku) DO NOTHING
                 """, catalogSize);
+    }
+
+    public CatalogState loadState() {
+        return jdbc.queryForObject(
+                "SELECT epoch, stock_per_item FROM catalog_state WHERE id = 1",
+                (rs, rowNum) -> new CatalogState(rs.getLong("epoch"), rs.getInt("stock_per_item")));
     }
 }
